@@ -1,0 +1,688 @@
+// =============================================================================
+// Sellora — Complete Prisma Schema
+// DB: PostgreSQL  |  ORM: Prisma  |  Multi-tenant via organizationId scoping
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// =============================================================================
+// ENUMS
+// =============================================================================
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  REP
+}
+
+enum PlanTier {
+  FREE
+  STARTER
+  PRO
+  ENTERPRISE
+}
+
+enum DocumentStatus {
+  PENDING      // uploaded, not yet queued
+  QUEUED       // job enqueued in BullMQ
+  PROCESSING   // worker actively embedding
+  COMPLETED    // vectors in Pinecone, ready to query
+  FAILED       // ingestion error — see errorMessage
+}
+
+enum DocumentType {
+  PDF
+  DOCX
+  TXT
+  MARKDOWN
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  UNQUALIFIED
+  NURTURING
+  CONVERTED    // linked to a Deal
+  LOST
+}
+
+enum LeadSource {
+  MANUAL
+  IMPORT_CSV
+  WEBHOOK
+  LINKEDIN
+  REFERRAL
+  INBOUND_FORM
+  COLD_OUTREACH
+  OTHER
+}
+
+enum DealStage {
+  DISCOVERY
+  QUALIFICATION
+  DEMO_SCHEDULED
+  PROPOSAL_SENT
+  NEGOTIATION
+  CLOSED_WON
+  CLOSED_LOST
+}
+
+enum ActivityType {
+  NOTE
+  EMAIL_SENT
+  EMAIL_RECEIVED
+  CALL_OUTBOUND
+  CALL_INBOUND
+  MEETING
+  TASK_COMPLETED
+  STAGE_CHANGE
+  LEAD_CREATED
+  DEAL_CREATED
+  AI_EMAIL_DRAFTED
+  DOCUMENT_SHARED
+  WEBHOOK_EVENT
+}
+
+enum TaskStatus {
+  OPEN
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum AiInteractionType {
+  CHAT_MESSAGE
+  EMAIL_DRAFT
+  OBJECTION_HANDLER
+  LEAD_SCORE_REASON
+  MEETING_SUMMARY
+}
+
+enum WorkflowTriggerEvent {
+  LEAD_CREATED
+  LEAD_STATUS_CHANGED
+  LEAD_REPLIED
+  DEAL_STAGE_CHANGED
+  DEAL_STALE         // no activity for N days
+  TASK_OVERDUE
+  DOCUMENT_INGESTED
+  MEETING_LOGGED
+}
+
+enum WorkflowActionType {
+  UPDATE_LEAD_STATUS
+  UPDATE_DEAL_STAGE
+  CREATE_TASK
+  SEND_NOTIFICATION
+  LOG_ACTIVITY
+  ASSIGN_REP
+}
+
+enum WorkflowStatus {
+  ACTIVE
+  PAUSED
+  DRAFT
+}
+
+enum ApiKeyScope {
+  READ_ONLY
+  FULL_ACCESS
+  WEBHOOK_ONLY
+}
+
+enum InviteStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REVOKED
+}
+
+// =============================================================================
+// ORGANIZATION
+// Master entity for multi-tenancy. Every other record scopes to an org.
+// =============================================================================
+
+model Organization {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  name     String
+  slug     String   @unique  // used in subdomain routing, URL slugs
+  logoUrl  String?
+  website  String?
+  industry String?  // e.g. "Cybersecurity", "Manufacturing", "B2B SaaS"
+  plan     PlanTier @default(FREE)
+
+  // Billing limits (enforced in service layer)
+  maxUsers     Int @default(5)
+  maxDocuments Int @default(20)
+  maxLeads     Int @default(500)
+
+  // Pinecone namespace = org.id (all vectors isolated per org)
+  pineconeNamespace String? // set on first document upload
+
+  // Relations
+  users            User[]
+  invites          Invite[]
+  leads            Lead[]
+  documents        Document[]
+  deals            Deal[]
+  tasks            Task[]
+  workflows        WorkflowTrigger[]
+  apiKeys          ApiKey[]
+  aiInteractions   AiInteraction[]
+  activities       Activity[]
+
+  @@map("organizations")
+}
+
+// =============================================================================
+// USER
+// Belongs to one Organization. Role determines RBAC permissions.
+// =============================================================================
+
+model User {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  email         String  @unique
+  passwordHash  String
+  firstName     String
+  lastName      String
+  avatarUrl     String?
+  phone         String?
+  title         String? // e.g. "Account Executive"
+  timezone      String  @default("UTC")
+  role          UserRole @default(REP)
+  isActive      Boolean  @default(true)
+  lastLoginAt   DateTime?
+  emailVerified Boolean  @default(false)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Relations
+  refreshTokens    RefreshToken[]
+  assignedLeads    Lead[]           @relation("AssignedRep")
+  createdLeads     Lead[]           @relation("LeadCreator")
+  assignedDeals    Deal[]           @relation("DealOwner")
+  assignedTasks    Task[]           @relation("TaskAssignee")
+  createdTasks     Task[]           @relation("TaskCreator")
+  activities       Activity[]
+  aiInteractions   AiInteraction[]
+  uploadedDocuments Document[]
+
+  @@index([organizationId])
+  @@index([email])
+  @@map("users")
+}
+
+// =============================================================================
+// REFRESH TOKEN
+// Stored server-side for rotation and revocation.
+// =============================================================================
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  token      String   @unique // SHA-256 hash of the raw token
+  expiresAt  DateTime
+  isRevoked  Boolean  @default(false)
+  ipAddress  String?
+  userAgent  String?
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@map("refresh_tokens")
+}
+
+// =============================================================================
+// INVITE
+// Email-based invitations for new team members.
+// =============================================================================
+
+model Invite {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  email      String
+  role       UserRole     @default(REP)
+  token      String       @unique // secure random token sent in email link
+  status     InviteStatus @default(PENDING)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([token])
+  @@map("invites")
+}
+
+// =============================================================================
+// DOCUMENT
+// Knowledge base artifact. Text is extracted, chunked, and embedded into Pinecone.
+// The actual file lives on disk (or S3); only metadata is stored here.
+// =============================================================================
+
+model Document {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  filename        String         // original upload filename
+  displayName     String         // user-editable friendly name
+  description     String?        // optional user-provided context
+  mimeType        String         // "application/pdf", "text/plain", etc.
+  sizeBytes       Int
+  fileType        DocumentType
+  storagePath     String         // path on disk or S3 key
+  status          DocumentStatus @default(PENDING)
+  errorMessage    String?        // populated on FAILED status
+
+  // Ingestion metadata
+  pageCount       Int?           // populated after extraction
+  totalChunks     Int?           // populated after chunking
+  embeddingModel  String?        // e.g. "text-embedding-3-small"
+  ingestedAt      DateTime?      // timestamp when COMPLETED
+
+  // Pinecone references
+  pineconeIds     String[]       // vector IDs in Pinecone for this doc
+
+  // BullMQ job tracking
+  jobId           String?        // BullMQ job ID for status polling
+
+  // Tags for filtering in the knowledge UI
+  tags            String[]
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  uploadedById String
+  uploadedBy   User   @relation(fields: [uploadedById], references: [id])
+
+  // Relations
+  chunks         DocumentChunk[]
+  aiInteractions AiInteraction[] // AI calls that cited this document
+
+  @@index([organizationId])
+  @@index([status])
+  @@index([uploadedById])
+  @@map("documents")
+}
+
+// =============================================================================
+// DOCUMENT CHUNK
+// One row per text chunk extracted from a Document.
+// Stores the raw text for citation display; vector lives in Pinecone.
+// =============================================================================
+
+model DocumentChunk {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  chunkIndex   Int     // 0-based order within the document
+  text         String  // raw chunk text (used for citation snippets)
+  tokenCount   Int     // approximate token count of this chunk
+  pageNumber   Int?    // source page (if extractable)
+  pineconeId   String  // the vector ID in Pinecone for this chunk
+
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, chunkIndex])
+  @@index([documentId])
+  @@index([pineconeId])
+  @@map("document_chunks")
+}
+
+// =============================================================================
+// LEAD
+// The core CRM entity. A person or contact being worked by the sales team.
+// =============================================================================
+
+model Lead {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Contact info
+  firstName     String
+  lastName      String
+  email         String?
+  phone         String?
+  linkedinUrl   String?
+  avatarUrl     String?
+
+  // Company info
+  company       String?
+  jobTitle      String?
+  department    String?
+  companySize   String?  // e.g. "11-50", "51-200", "1000+"
+  industry      String?
+  website       String?
+  country       String?
+  city          String?
+
+  // CRM metadata
+  status        LeadStatus @default(NEW)
+  source        LeadSource @default(MANUAL)
+  tags          String[]
+  notes         String?    // freeform notes field
+
+  // AI-generated fields
+  aiScore       Int?       // 0–100 lead quality score (GPT-generated)
+  aiScoreReason String?    // explanation of the score
+  aiSummary     String?    // AI-generated summary of the lead profile
+
+  // Engagement tracking
+  lastContactedAt DateTime?
+  nextFollowUpAt  DateTime?
+  emailOpenCount  Int       @default(0)
+  emailClickCount Int       @default(0)
+
+  // Custom fields (flexible JSON for per-org extensions)
+  customFields    Json?
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  assignedToId String?
+  assignedTo   User?   @relation("AssignedRep", fields: [assignedToId], references: [id])
+
+  createdById String
+  createdBy   User   @relation("LeadCreator", fields: [createdById], references: [id])
+
+  // Relations
+  deals          Deal[]
+  activities     Activity[]
+  tasks          Task[]
+  aiInteractions AiInteraction[]
+
+  @@index([organizationId])
+  @@index([assignedToId])
+  @@index([status])
+  @@index([email])
+  @@map("leads")
+}
+
+// =============================================================================
+// DEAL
+// A sales opportunity linked to a Lead. Tracks the pipeline stage and value.
+// =============================================================================
+
+model Deal {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  title             String
+  stage             DealStage @default(DISCOVERY)
+  value             Decimal?  @db.Decimal(12, 2) // deal value in base currency
+  currency          String    @default("USD")
+  probability       Int?      // 0–100 win probability (%)
+  closeDate         DateTime? // expected close date
+  closedAt          DateTime? // actual close date (set on CLOSED_WON/LOST)
+
+  // Context
+  description       String?
+  lostReason        String?   // populated on CLOSED_LOST
+  competitorNotes   String?   // notes on competing vendors
+
+  // AI-generated
+  aiStageSuggestion DealStage? // AI recommendation for next stage
+  aiRiskFlags       String[]   // e.g. ["No technical champion", "Long silence"]
+
+  // Tracking
+  lastActivityAt    DateTime?
+  stageChangedAt    DateTime?  // when the stage last changed
+
+  leadId String
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  ownerId String
+  owner   User   @relation("DealOwner", fields: [ownerId], references: [id])
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Relations
+  activities     Activity[]
+  tasks          Task[]
+  aiInteractions AiInteraction[]
+
+  @@index([organizationId])
+  @@index([leadId])
+  @@index([ownerId])
+  @@index([stage])
+  @@map("deals")
+}
+
+// =============================================================================
+// ACTIVITY
+// Immutable timeline event log. Every meaningful action creates an Activity row.
+// This powers the lead/deal activity timeline in the frontend.
+// =============================================================================
+
+model Activity {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  type        ActivityType
+  title       String       // short description, e.g. "Email sent: Re: Product Demo"
+  body        String?      // full content (email body, call notes, meeting transcript)
+  metadata    Json?        // flexible bag: { emailSubject, callDuration, meetingUrl, etc. }
+
+  // Source attribution
+  isAutoLogged Boolean @default(false) // true = logged by automation/webhook, not manual
+
+  // Relations (a given activity can be linked to a lead AND/OR a deal)
+  leadId String?
+  lead   Lead?   @relation(fields: [leadId], references: [id], onDelete: SetNull)
+
+  dealId String?
+  deal   Deal?   @relation(fields: [dealId], references: [id], onDelete: SetNull)
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([leadId])
+  @@index([dealId])
+  @@index([organizationId])
+  @@index([type])
+  @@index([createdAt])
+  @@map("activities")
+}
+
+// =============================================================================
+// TASK
+// Rep follow-up items. Created manually or by workflow automation.
+// =============================================================================
+
+model Task {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  title       String
+  description String?
+  dueDate     DateTime?
+  completedAt DateTime?
+  status      TaskStatus   @default(OPEN)
+  priority    TaskPriority @default(MEDIUM)
+  isAutoCreated Boolean    @default(false) // created by a WorkflowTrigger
+
+  // Optional links
+  leadId String?
+  lead   Lead?   @relation(fields: [leadId], references: [id], onDelete: SetNull)
+
+  dealId String?
+  deal   Deal?   @relation(fields: [dealId], references: [id], onDelete: SetNull)
+
+  assignedToId String?
+  assignedTo   User?   @relation("TaskAssignee", fields: [assignedToId], references: [id])
+
+  createdById String
+  createdBy   User   @relation("TaskCreator", fields: [createdById], references: [id])
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Which workflow created this task (if any)
+  triggeredByWorkflowId String?
+  triggeredByWorkflow   WorkflowTrigger? @relation(fields: [triggeredByWorkflowId], references: [id])
+
+  @@index([organizationId])
+  @@index([assignedToId])
+  @@index([leadId])
+  @@index([dealId])
+  @@index([status])
+  @@index([dueDate])
+  @@map("tasks")
+}
+
+// =============================================================================
+// AI INTERACTION
+// Full audit log of every AI call made by the platform.
+// Enables replay, cost tracking, prompt improvement, and citation tracing.
+// =============================================================================
+
+model AiInteraction {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  type           AiInteractionType
+  model          String            // e.g. "gpt-4o", "gpt-4o-mini"
+  promptTokens   Int
+  completionTokens Int
+  totalTokens    Int
+  latencyMs      Int               // end-to-end latency in milliseconds
+  isStreamed     Boolean           @default(false)
+
+  // The actual content
+  systemPrompt   String?           // the system prompt sent
+  userPrompt     String            // the user turn
+  response       String            // full response text
+
+  // RAG context — which chunks were used to ground this response
+  retrievedChunkIds String[]       // DocumentChunk IDs used as context
+  pineconeQueryVector Float[]      // the embedding vector used for retrieval
+
+  // Optional links (nullable — a chat message may not be linked to a lead)
+  leadId String?
+  lead   Lead?   @relation(fields: [leadId], references: [id], onDelete: SetNull)
+
+  dealId String?
+  deal   Deal?   @relation(fields: [dealId], references: [id], onDelete: SetNull)
+
+  documentId String?
+  document   Document? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([userId])
+  @@index([leadId])
+  @@index([type])
+  @@index([createdAt])
+  @@map("ai_interactions")
+}
+
+// =============================================================================
+// WORKFLOW TRIGGER
+// Event-based automation rules. When an event fires, the action is executed.
+// Evaluation happens in the BullMQ workflow.processor.
+// =============================================================================
+
+model WorkflowTrigger {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  name        String
+  description String?
+  status      WorkflowStatus @default(DRAFT)
+
+  // Trigger definition
+  triggerEvent    WorkflowTriggerEvent
+  // JSON conditions evaluated at runtime
+  // e.g. { "dealStage": "DISCOVERY", "daysSinceActivity": 7 }
+  triggerConditions Json?
+
+  // Action definition
+  actionType      WorkflowActionType
+  // JSON payload for the action
+  // e.g. { "newStage": "QUALIFICATION" } or { "taskTitle": "Follow up with {{lead.firstName}}" }
+  actionPayload   Json
+
+  // Execution stats
+  executionCount  Int      @default(0)
+  lastExecutedAt  DateTime?
+  lastErrorAt     DateTime?
+  lastError       String?
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Tasks this workflow has created
+  createdTasks   Task[]
+
+  @@index([organizationId])
+  @@index([triggerEvent])
+  @@index([status])
+  @@map("workflow_triggers")
+}
+
+// =============================================================================
+// API KEY
+// For external integrations (webhooks from Recall.ai, Nylas, etc.)
+// Key is stored hashed; the raw key is shown only once on creation.
+// =============================================================================
+
+model ApiKey {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  label      String       // e.g. "Recall.ai Webhook", "Zapier Integration"
+  keyHash    String       @unique // SHA-256 of the raw key
+  keyPrefix  String       // first 8 chars of raw key, for display identification
+  scope      ApiKeyScope  @default(FULL_ACCESS)
+  isActive   Boolean      @default(true)
+  expiresAt  DateTime?
+  lastUsedAt DateTime?
+  usageCount Int          @default(0)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([keyHash])
+  @@map("api_keys")
+}
