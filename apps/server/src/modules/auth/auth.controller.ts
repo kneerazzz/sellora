@@ -114,7 +114,6 @@ const logout = asyncHandler(async (req: Request, res: Response) => {
  */
 const getMe = asyncHandler(async (req: Request, res: Response) => {
   const user = await authService.getMe(req.user.id)
-  console.log("user", req.user.id)
   res.status(200).json(ApiResponse.ok('User profile fetched', user))
 })
 

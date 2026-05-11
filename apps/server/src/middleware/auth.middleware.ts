@@ -18,9 +18,7 @@ export async function authenticate(
 ): Promise<void> {
   try {
     const authHeader = req.headers.authorization
-
-    console.log(authHeader)
-
+    
     if (!authHeader?.startsWith('Bearer ')) {
       throw ApiError.unauthorized('No token provided')
     }

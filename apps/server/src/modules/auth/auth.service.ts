@@ -24,6 +24,7 @@ function hashToken(raw: string): string {
   return crypto.createHash('sha256').update(raw).digest('hex')
 }
 
+
 function generateAccessToken(payload: JwtAccessPayload): string {
   return jwt.sign(payload, process.env.JWT_ACCESS_SECRET as string, {
     expiresIn: ACCESS_TOKEN_EXPIRES,
