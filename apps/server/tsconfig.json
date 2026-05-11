@@ -2,12 +2,13 @@
   "compilerOptions": {
     "target": "ESNext",
     "module": "ESNext",
-    "moduleResolution": "Bundler", // This allows extensionless imports
+    "moduleResolution": "Bundler",
+    "types": ["node"], // <--- ADD THIS: Restricts type searching to just Node.js
     "allowImportingTsExtensions": false, 
-    "noEmit": true,                // tsx handles the execution, so we don't need 'tsc' to output files
+    "noEmit": true,
     "strict": true,
     "esModuleInterop": true,
-    "skipLibCheck": true,
+    "skipLibCheck": true, // This usually ignores errors in node_modules, but "types" is stronger
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"]

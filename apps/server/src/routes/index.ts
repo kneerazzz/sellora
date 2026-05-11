@@ -1,7 +1,7 @@
 import { Router } from 'express'
 
 // Modules will be imported here as they are built
-// import { authRouter } from '../modules/auth/auth.router'
+import { authRouter } from '../modules/auth/auth.router'
 // import { usersRouter } from '../modules/users/users.router'
 // import { leadsRouter } from '../modules/leads/leads.router'
 // import { dealsRouter } from '../modules/deals/deals.router'
@@ -9,7 +9,7 @@ import { Router } from 'express'
 
 export const router = Router()
 
-// router.use('/auth', authRouter)
+router.use('/auth', authRouter)
 // router.use('/users', usersRouter)
 // router.use('/leads', leadsRouter)
 // router.use('/deals', dealsRouter)
