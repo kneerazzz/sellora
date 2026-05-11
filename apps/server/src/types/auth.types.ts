@@ -39,3 +39,11 @@ export interface AuthUser {
   role: UserRole
   organizationId: string
 }
+
+export interface SessionInfo {
+  id: string
+  ipAddress: string
+  userAgent: string
+  createdAt: Date
+  expiresAt: Date
+}

@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { authController } from './auth.controller'
 import { validate } from '../../middleware/validate.middleware'
 import { authenticate } from '../../middleware/auth.middleware'
-import { loginSchema, refreshSchema, registerSchema } from './auth.schema'
+import { changePasswordSchema, loginSchema, refreshSchema, registerSchema, updateProfileSchema } from './auth.schema'
 
 export const authRouter = Router()
 
@@ -26,6 +26,7 @@ authRouter.post(
 // Token can come from httpOnly cookie OR request body
 authRouter.post(
   '/refresh',
+  validate(refreshSchema),
   authController.refresh
 )
 
@@ -42,4 +43,42 @@ authRouter.get(
   '/me',
   authenticate,
   authController.getMe
+)
+
+authRouter.patch(
+    '/change-password',
+    authenticate,
+    validate(changePasswordSchema),
+    authController.changePassword
+)
+
+authRouter.patch(
+    '/profile',
+    authenticate,
+    validate(updateProfileSchema),
+    authController.updateProfile
+)
+
+authRouter.post(
+    '/logout-all',
+    authenticate,
+    authController.logoutAll
+)
+
+authRouter.get(
+    '/sessions',
+    authenticate,
+    authController.getSessions
+)
+
+authRouter.delete(
+    '/sessions/:id',
+    authenticate,
+    authController.revokeSession
+)
+
+authRouter.post(
+    '/accept-invite',
+    validate(registerSchema),
+    authController.acceptInvite
 )

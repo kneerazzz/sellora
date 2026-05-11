@@ -3,30 +3,37 @@ import { authService } from './auth.service'
 import { ApiResponse } from '../../utils/apiResponse'
 import { asyncHandler } from '../../utils/asyncHandler'
 import { ApiError } from '../../utils/apiError'
-import type { RegisterInput, LoginInput } from './auth.schema'
+import type {
+  RegisterInput,
+  LoginInput,
+  AcceptInviteInput,
+  ChangePasswordInput,
+  UpdateProfileInput,
+} from './auth.schema'
+import { any } from 'zod'
 
 // ── Cookie config ─────────────────────────────────────────────────────────────
 
 const REFRESH_COOKIE_OPTIONS = {
-  httpOnly: true,                              // not accessible via JS
+  httpOnly: true,
   secure: process.env.NODE_ENV === 'production',
   sameSite: 'lax' as const,
-  maxAge: 7 * 24 * 60 * 60 * 1000,            // 7 days in ms
-  path: '/api/v1/auth',                        // only sent on auth routes
+  maxAge: 7 * 24 * 60 * 60 * 1000,
+  path: '/api/v1/auth',
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function extractMeta(req: Request) {
   return {
-    ipAddress: (req.headers['x-forwarded-for'] as string)?.split(',')[0].trim()
-      ?? req.socket.remoteAddress,
+    ipAddress:
+      (req.headers['x-forwarded-for'] as string)?.split(',')[0].trim() ??
+      req.socket.remoteAddress,
     userAgent: req.headers['user-agent'],
   }
 }
 
 function extractRefreshToken(req: Request): string {
-  // Accept from cookie first, fall back to body (for mobile clients)
   const fromCookie = req.cookies?.refreshToken as string | undefined
   const fromBody = req.body?.refreshToken as string | undefined
   const token = fromCookie ?? fromBody
@@ -36,18 +43,12 @@ function extractRefreshToken(req: Request): string {
 
 // ── Controllers ───────────────────────────────────────────────────────────────
 
-/**
- * POST /api/v1/auth/register
- * Creates a new Organization + Admin user.
- */
 const register = asyncHandler(async (req: Request, res: Response) => {
-  const input = req.body as RegisterInput
-  const meta = extractMeta(req)
-
-  const { user, tokens } = await authService.register(input, meta)
-
+  const { user, tokens } = await authService.register(
+    req.body as RegisterInput,
+    extractMeta(req)
+  )
   res.cookie('refreshToken', tokens.refreshToken, REFRESH_COOKIE_OPTIONS)
-
   res.status(201).json(
     ApiResponse.created('Account created successfully', {
       user,
@@ -56,65 +57,107 @@ const register = asyncHandler(async (req: Request, res: Response) => {
   )
 })
 
-/**
- * POST /api/v1/auth/login
- */
 const login = asyncHandler(async (req: Request, res: Response) => {
-  const input = req.body as LoginInput
-  const meta = extractMeta(req)
-
-  const { user, tokens } = await authService.login(input, meta)
-
+  const { user, tokens } = await authService.login(
+    req.body as LoginInput,
+    extractMeta(req)
+  )
   res.cookie('refreshToken', tokens.refreshToken, REFRESH_COOKIE_OPTIONS)
-
   res.status(200).json(
-    ApiResponse.ok('Login successful', {
-      user,
-      accessToken: tokens.accessToken,
-    })
+    ApiResponse.ok('Login successful', { user, accessToken: tokens.accessToken })
   )
 })
 
-/**
- * POST /api/v1/auth/refresh
- * Rotates the refresh token and issues a new access token.
- */
 const refresh = asyncHandler(async (req: Request, res: Response) => {
-  const rawToken = extractRefreshToken(req)
-  const meta = extractMeta(req)
-
-  const { user, tokens } = await authService.refresh(rawToken, meta)
-
+  const { user, tokens } = await authService.refresh(
+    extractRefreshToken(req),
+    extractMeta(req)
+  )
   res.cookie('refreshToken', tokens.refreshToken, REFRESH_COOKIE_OPTIONS)
-
   res.status(200).json(
-    ApiResponse.ok('Token refreshed', {
-      user,
-      accessToken: tokens.accessToken,
-    })
+    ApiResponse.ok('Token refreshed', { user, accessToken: tokens.accessToken })
   )
 })
 
-/**
- * POST /api/v1/auth/logout
- */
 const logout = asyncHandler(async (req: Request, res: Response) => {
-  const rawToken = extractRefreshToken(req)
-
-  await authService.logout(rawToken)
-
+  await authService.logout(extractRefreshToken(req))
   res.clearCookie('refreshToken', { path: '/api/v1/auth' })
-
   res.status(200).json(ApiResponse.ok('Logged out successfully', null))
 })
 
 /**
- * GET /api/v1/auth/me
- * Returns the currently authenticated user's profile.
+ * POST /auth/logout-all
+ * Revokes every active session for the current user.
+ * Useful for "sign out of all devices" feature.
  */
+const logoutAll = asyncHandler(async (req: Request, res: Response) => {
+  const { revokedCount } = await authService.logoutAll(req.user.id)
+  res.clearCookie('refreshToken', { path: '/api/v1/auth' })
+  res.status(200).json(
+    ApiResponse.ok(`Signed out of ${revokedCount} device(s)`, { revokedCount })
+  )
+})
+
+/**
+ * GET /auth/sessions
+ * Returns all active sessions (non-revoked, non-expired refresh tokens).
+ * Each session shows device info, IP, and when it was created.
+ */
+const getSessions = asyncHandler(async (req: Request, res: Response) => {
+  const sessions = await authService.getSessions(req.user.id)
+  res.status(200).json(ApiResponse.ok('Active sessions fetched', sessions))
+})
+
+/**
+ * DELETE /auth/sessions/:id
+ * Revokes a specific session by its RefreshToken ID.
+ * Ownership is verified in the service — users can only revoke their own sessions.
+ */
+const revokeSession = asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params
+  if (typeof id !== 'string') {
+    throw ApiError.badRequest('Invalid session ID format') 
+  }
+  
+  await authService.revokeSession(req.user.id, id)
+  res.status(200).json(ApiResponse.ok('Session revoked successfully', null))
+})
+
 const getMe = asyncHandler(async (req: Request, res: Response) => {
   const user = await authService.getMe(req.user.id)
-  res.status(200).json(ApiResponse.ok('User profile fetched', user))
+  res.status(200).json(ApiResponse.ok('Profile fetched', user))
+})
+
+const changePassword = asyncHandler(async (req: Request, res: Response) => {
+  await authService.changePassword(req.user.id, req.body as ChangePasswordInput)
+  res.clearCookie('refreshToken', { path: '/api/v1/auth' })
+  res.status(200).json(
+    ApiResponse.ok('Password changed. Please log in again on all devices.', null)
+  )
+})
+
+const updateProfile = asyncHandler(async (req: Request, res: Response) => {
+  const user = await authService.updateProfile(req.user.id, req.body as UpdateProfileInput)
+  res.status(200).json(ApiResponse.ok('Profile updated', user))
+})
+
+/**
+ * POST /auth/accept-invite
+ * Public endpoint — invited user sets their name + password and joins the org.
+ * The invite token (from the email link) carries the email and role.
+ */
+const acceptInvite = asyncHandler(async (req: Request, res: Response) => {
+  const { user, tokens } = await authService.acceptInvite(
+    req.body as AcceptInviteInput,
+    extractMeta(req)
+  )
+  res.cookie('refreshToken', tokens.refreshToken, REFRESH_COOKIE_OPTIONS)
+  res.status(201).json(
+    ApiResponse.created('Account created. Welcome to your team!', {
+      user,
+      accessToken: tokens.accessToken,
+    })
+  )
 })
 
 export const authController = {
@@ -122,5 +165,11 @@ export const authController = {
   login,
   refresh,
   logout,
+  logoutAll,
+  getSessions,
+  revokeSession,
   getMe,
+  changePassword,
+  updateProfile,
+  acceptInvite,
 }
