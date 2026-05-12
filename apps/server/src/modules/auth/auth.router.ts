@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { authController } from './auth.controller'
 import { validate } from '../../middleware/validate.middleware'
 import { authenticate } from '../../middleware/auth.middleware'
-import { changePasswordSchema, loginSchema, refreshSchema, registerSchema, updateProfileSchema } from './auth.schema'
+import { loginSchema, refreshSchema, registerSchema } from './auth.schema'
 
 export const authRouter = Router()
 
@@ -38,26 +38,6 @@ authRouter.post(
 
 // ── Protected routes ──────────────────────────────────────────────────────────
 
-// GET /api/v1/auth/me
-authRouter.get(
-  '/me',
-  authenticate,
-  authController.getMe
-)
-
-authRouter.patch(
-    '/change-password',
-    authenticate,
-    validate(changePasswordSchema),
-    authController.changePassword
-)
-
-authRouter.patch(
-    '/profile',
-    authenticate,
-    validate(updateProfileSchema),
-    authController.updateProfile
-)
 
 authRouter.post(
     '/logout-all',

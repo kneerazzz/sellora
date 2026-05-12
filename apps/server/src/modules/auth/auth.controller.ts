@@ -7,8 +7,6 @@ import type {
   RegisterInput,
   LoginInput,
   AcceptInviteInput,
-  ChangePasswordInput,
-  UpdateProfileInput,
 } from './auth.schema'
 import { any } from 'zod'
 
@@ -123,24 +121,6 @@ const revokeSession = asyncHandler(async (req: Request, res: Response) => {
   res.status(200).json(ApiResponse.ok('Session revoked successfully', null))
 })
 
-const getMe = asyncHandler(async (req: Request, res: Response) => {
-  const user = await authService.getMe(req.user.id)
-  res.status(200).json(ApiResponse.ok('Profile fetched', user))
-})
-
-const changePassword = asyncHandler(async (req: Request, res: Response) => {
-  await authService.changePassword(req.user.id, req.body as ChangePasswordInput)
-  res.clearCookie('refreshToken', { path: '/api/v1/auth' })
-  res.status(200).json(
-    ApiResponse.ok('Password changed. Please log in again on all devices.', null)
-  )
-})
-
-const updateProfile = asyncHandler(async (req: Request, res: Response) => {
-  const user = await authService.updateProfile(req.user.id, req.body as UpdateProfileInput)
-  res.status(200).json(ApiResponse.ok('Profile updated', user))
-})
-
 /**
  * POST /auth/accept-invite
  * Public endpoint — invited user sets their name + password and joins the org.
@@ -168,8 +148,5 @@ export const authController = {
   logoutAll,
   getSessions,
   revokeSession,
-  getMe,
-  changePassword,
-  updateProfile,
   acceptInvite,
 }
