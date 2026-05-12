@@ -37,7 +37,7 @@ export class ApiResponse<T = unknown> {
         return new ApiResponse<T>(201, message, data)
     }
 
-    static onContent(message = "Deleted Successfully"){
+    static noContent(message = "Deleted Successfully"){
         return new ApiResponse<void>(204, message, null)
     }
 }
