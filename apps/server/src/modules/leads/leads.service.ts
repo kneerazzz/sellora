@@ -1,11 +1,10 @@
-import { Prisma } from '@prisma/client'
+import { Prisma, UserRole } from '@prisma/client'
 import { prisma } from '../../config/prisma'
 import { ApiError } from '../../utils/apiError'
 import type { CreateLeadInput, UpdateLeadInput, ListLeadsQuery } from './leads.schema'
 import type { PaginatedResult } from '../../types/pagination.types'
 
-// ── Prisma select — what we return for a lead ─────────────────────────────────
-// Defined once here so every method returns the same shape.
+// ── Prisma select ─────────────────────────────────────────────────────────────
 
 const leadSelect = {
   id: true,
@@ -51,12 +50,16 @@ const leadSelect = {
 
 export type LeadPayload = Prisma.LeadGetPayload<{ select: typeof leadSelect }>
 
+// ── Caller context — passed from controller via req.user ──────────────────────
+
+export interface CallerContext {
+  userId: string
+  organizationId: string
+  role: UserRole
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/**
- * Verify that an assignedToId belongs to the same org.
- * Prevents assigning leads to users in other organizations.
- */
 async function validateAssignee(
   assignedToId: string,
   organizationId: string
@@ -72,19 +75,36 @@ async function validateAssignee(
   }
 }
 
+/**
+ * Builds the base where clause for all lead queries.
+ * REPs are automatically scoped to only their assigned leads.
+ * ADMINs and MANAGERs see all leads in the org.
+ */
+function buildLeadScope(
+  organizationId: string,
+  caller: CallerContext
+): Prisma.LeadWhereInput {
+  return {
+    organizationId,
+    ...(caller.role === 'REP' && { assignedToId: caller.userId }),
+  }
+}
+
 // ── Service ───────────────────────────────────────────────────────────────────
 
-/**
- * Create a new lead scoped to the caller's organization.
- */
 async function createLead(
   input: CreateLeadInput,
-  context: { userId: string; organizationId: string }
+  caller: CallerContext
 ): Promise<LeadPayload> {
   const { assignedToId, nextFollowUpAt, customFields, ...rest } = input
 
+  // REPs can only create leads assigned to themselves
+  if (caller.role === 'REP' && assignedToId && assignedToId !== caller.userId) {
+    throw ApiError.forbidden('You can only create leads assigned to yourself')
+  }
+
   if (assignedToId) {
-    await validateAssignee(assignedToId, context.organizationId)
+    await validateAssignee(assignedToId, caller.organizationId)
   }
 
   const lead = await prisma.lead.create({
@@ -92,9 +112,9 @@ async function createLead(
       ...rest,
       nextFollowUpAt: nextFollowUpAt ? new Date(nextFollowUpAt) : undefined,
       customFields: customFields as Prisma.InputJsonValue | undefined,
-      organizationId: context.organizationId,
-      createdById: context.userId,
-      assignedToId: assignedToId ?? context.userId, // default assign to creator
+      organizationId: caller.organizationId,
+      createdById: caller.userId,
+      assignedToId: assignedToId ?? caller.userId,
     },
     select: leadSelect,
   })
@@ -102,15 +122,16 @@ async function createLead(
   return lead
 }
 
-/**
- * Get a single lead by ID — scoped to org.
- */
 async function getLeadById(
   leadId: string,
-  organizationId: string
+  caller: CallerContext
 ): Promise<LeadPayload> {
   const lead = await prisma.lead.findFirst({
-    where: { id: leadId, organizationId },
+    where: {
+      id: leadId,
+      // scope: REP can only fetch their own leads
+      ...buildLeadScope(caller.organizationId, caller),
+    },
     select: leadSelect,
   })
 
@@ -118,13 +139,13 @@ async function getLeadById(
   return lead
 }
 
-/**
- * Get a lead with its full activity timeline, deals, and tasks.
- * Used for the lead detail page.
- */
-async function getLeadDetail(leadId: string, organizationId: string) {
+async function getLeadDetail(leadId: string, caller: CallerContext) {
   const lead = await prisma.lead.findFirst({
-    where: { id: leadId, organizationId },
+    where: {
+      id: leadId,
+      // scope: REP can only fetch their own leads
+      ...buildLeadScope(caller.organizationId, caller),
+    },
     select: {
       ...leadSelect,
       deals: {
@@ -157,7 +178,7 @@ async function getLeadDetail(leadId: string, organizationId: string) {
           },
         },
         orderBy: { createdAt: 'desc' },
-        take: 50, // last 50 activities
+        take: 50,
       },
       tasks: {
         select: {
@@ -182,35 +203,38 @@ async function getLeadDetail(leadId: string, organizationId: string) {
   return lead
 }
 
-/**
- * List leads with pagination, search, and filtering.
- */
 async function listLeads(
   query: ListLeadsQuery,
-  organizationId: string
+  caller: CallerContext
 ): Promise<PaginatedResult<LeadPayload>> {
-  const page     = query.page     ?? 1
-  const limit    = query.limit    ?? 20
-  const sortBy   = query.sortBy   ?? 'createdAt'
+  const page      = query.page      ?? 1
+  const limit     = query.limit     ?? 20
+  const sortBy    = query.sortBy    ?? 'createdAt'
   const sortOrder = query.sortOrder ?? 'desc'
-  const skip     = (page - 1) * limit
+  const skip      = (page - 1) * limit
 
-  // Build where clause
   const where: Prisma.LeadWhereInput = {
-    organizationId,
-    ...(query.status       && { status: query.status }),
-    ...(query.source       && { source: query.source }),
-    ...(query.assignedToId && { assignedToId: query.assignedToId }),
-    // Tags: lead must have ALL provided tags
+    // buildLeadScope handles REP scoping automatically
+    ...buildLeadScope(caller.organizationId, caller),
+
+    ...(query.status && { status: query.status }),
+    ...(query.source && { source: query.source }),
+
+    // ADMIN/MANAGER can filter by assignee; for REP this is already
+    // locked to their own ID via buildLeadScope so this filter is ignored
+    ...(caller.role !== 'REP' && query.assignedToId && {
+      assignedToId: query.assignedToId,
+    }),
+
     ...(query.tags?.length && { tags: { hasEvery: query.tags } }),
-    // Search: across name, email, company
+
     ...(query.search && {
       OR: [
-        { firstName:  { contains: query.search, mode: 'insensitive' } },
-        { lastName:   { contains: query.search, mode: 'insensitive' } },
-        { email:      { contains: query.search, mode: 'insensitive' } },
-        { company:    { contains: query.search, mode: 'insensitive' } },
-        { jobTitle:   { contains: query.search, mode: 'insensitive' } },
+        { firstName: { contains: query.search, mode: 'insensitive' } },
+        { lastName:  { contains: query.search, mode: 'insensitive' } },
+        { email:     { contains: query.search, mode: 'insensitive' } },
+        { company:   { contains: query.search, mode: 'insensitive' } },
+        { jobTitle:  { contains: query.search, mode: 'insensitive' } },
       ],
     }),
   }
@@ -239,25 +263,30 @@ async function listLeads(
   }
 }
 
-/**
- * Update a lead — partial update, only provided fields are changed.
- */
 async function updateLead(
   leadId: string,
   input: UpdateLeadInput,
-  organizationId: string
+  caller: CallerContext
 ): Promise<LeadPayload> {
-  // Verify lead exists and belongs to org
+  // Scope check: REP can only update their own leads
   const existing = await prisma.lead.findFirst({
-    where: { id: leadId, organizationId },
+    where: {
+      id: leadId,
+      ...buildLeadScope(caller.organizationId, caller),
+    },
     select: { id: true, status: true },
   })
   if (!existing) throw ApiError.notFound('Lead not found')
 
+  // REPs cannot reassign leads to someone else
   const { assignedToId, nextFollowUpAt, customFields, ...rest } = input
 
+  if (caller.role === 'REP' && assignedToId && assignedToId !== caller.userId) {
+    throw ApiError.forbidden('You cannot reassign a lead to another rep')
+  }
+
   if (assignedToId) {
-    await validateAssignee(assignedToId, organizationId)
+    await validateAssignee(assignedToId, caller.organizationId)
   }
 
   const lead = await prisma.lead.update({
@@ -278,13 +307,14 @@ async function updateLead(
   return lead
 }
 
-/**
- * Delete a lead — scoped to org.
- * Hard delete. Activities use onDelete: SetNull so history is preserved.
- */
-async function deleteLead(leadId: string, organizationId: string): Promise<void> {
+async function deleteLead(leadId: string, caller: CallerContext): Promise<void> {
+  // ADMIN/MANAGER only — enforced at router level too, but double-check here
+  if (caller.role === 'REP') {
+    throw ApiError.forbidden('You do not have permission to delete leads')
+  }
+
   const existing = await prisma.lead.findFirst({
-    where: { id: leadId, organizationId },
+    where: { id: leadId, organizationId: caller.organizationId },
     select: { id: true },
   })
   if (!existing) throw ApiError.notFound('Lead not found')
@@ -292,21 +322,17 @@ async function deleteLead(leadId: string, organizationId: string): Promise<void>
   await prisma.lead.delete({ where: { id: leadId } })
 }
 
-/**
- * Bulk assign leads to a rep.
- * Manager/Admin only — enforced at the router level.
- */
 async function bulkAssign(
   leadIds: string[],
   assignedToId: string,
-  organizationId: string
+  caller: CallerContext
 ): Promise<{ updatedCount: number }> {
-  await validateAssignee(assignedToId, organizationId)
+  await validateAssignee(assignedToId, caller.organizationId)
 
   const result = await prisma.lead.updateMany({
     where: {
       id: { in: leadIds },
-      organizationId, // ensures you can only update leads in your org
+      organizationId: caller.organizationId,
     },
     data: { assignedToId },
   })
@@ -314,18 +340,15 @@ async function bulkAssign(
   return { updatedCount: result.count }
 }
 
-/**
- * Bulk update status for multiple leads.
- */
 async function bulkUpdateStatus(
   leadIds: string[],
   status: string,
-  organizationId: string
+  caller: CallerContext
 ): Promise<{ updatedCount: number }> {
   const result = await prisma.lead.updateMany({
     where: {
       id: { in: leadIds },
-      organizationId,
+      organizationId: caller.organizationId,
     },
     data: { status: status as any },
   })

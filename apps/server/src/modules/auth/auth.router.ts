@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { authController } from './auth.controller'
 import { validate } from '../../middleware/validate.middleware'
 import { authenticate } from '../../middleware/auth.middleware'
-import { loginSchema, refreshSchema, registerSchema } from './auth.schema'
+import { loginSchema, refreshSchema, registerSchema, acceptInviteSchema } from './auth.schema'
 
 export const authRouter = Router()
 
@@ -59,6 +59,6 @@ authRouter.delete(
 
 authRouter.post(
     '/accept-invite',
-    validate(registerSchema),
+    validate(acceptInviteSchema),
     authController.acceptInvite
 )
