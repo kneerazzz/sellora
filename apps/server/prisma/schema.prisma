@@ -1,6 +1,12 @@
 // =============================================================================
-// Sellora — Complete Prisma Schema
+// Sellora — Workflow Backend Schema
 // DB: PostgreSQL  |  ORM: Prisma  |  Multi-tenant via organizationId scoping
+//
+// Product boundary:
+// - Salesforce/HubSpot remain the source of truth for CRM objects.
+// - n8n owns external app routing and writeback actions.
+// - Sellora owns org isolation, documents, AI outputs, workflow runs, mappings,
+//   citations, and audit logs.
 // =============================================================================
 
 generator client {
@@ -151,6 +157,109 @@ enum InviteStatus {
   REVOKED
 }
 
+enum IntegrationProvider {
+  SALESFORCE
+  HUBSPOT
+  GMAIL
+  OUTLOOK
+  SLACK
+  RECALL_AI
+  N8N
+  CUSTOM
+}
+
+enum IntegrationStatus {
+  ACTIVE
+  DISCONNECTED
+  NEEDS_REAUTH
+  PAUSED
+}
+
+enum ExternalObjectType {
+  CONTACT
+  COMPANY
+  LEAD
+  DEAL
+  OPPORTUNITY
+  TASK
+  ACTIVITY
+  EMAIL
+  THREAD
+  MEETING
+  TRANSCRIPT
+  USER
+  OTHER
+}
+
+enum WebhookEventSource {
+  N8N
+  SALESFORCE
+  HUBSPOT
+  GMAIL
+  OUTLOOK
+  SLACK
+  RECALL_AI
+  MANUAL
+  CUSTOM
+}
+
+enum WebhookEventType {
+  EMAIL_RECEIVED
+  EMAIL_SENT
+  CALL_TRANSCRIPT_RECEIVED
+  MEETING_LOGGED
+  CRM_RECORD_CREATED
+  CRM_RECORD_UPDATED
+  CRM_STAGE_CHANGED
+  MANUAL_QUESTION
+  DOCUMENT_UPLOADED
+  CUSTOM
+}
+
+enum WebhookEventStatus {
+  RECEIVED
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+  IGNORED
+}
+
+enum WorkflowRunType {
+  SALES_EVENT_EXTRACTION
+  GROUNDED_TECHNICAL_ANSWER
+  CRM_UPDATE_PREPARATION
+  EMAIL_DRAFT
+  CALL_SUMMARY
+  CUSTOM
+}
+
+enum WorkflowRunStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+  NEEDS_REVIEW
+}
+
+enum ConfidenceLevel {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum SyncDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum SyncStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  SKIPPED
+}
+
 // =============================================================================
 // ORGANIZATION
 // Master entity for multi-tenancy. Every other record scopes to an org.
@@ -187,6 +296,11 @@ model Organization {
   apiKeys          ApiKey[]
   aiInteractions   AiInteraction[]
   activities       Activity[]
+  integrations     Integration[]
+  externalMappings ExternalObjectMapping[]
+  webhookEvents    WebhookEvent[]
+  workflowRuns     WorkflowRun[]
+  syncLogs         SyncLog[]
 
   @@map("organizations")
 }
@@ -358,7 +472,8 @@ model DocumentChunk {
 
 // =============================================================================
 // LEAD
-// The core CRM entity. A person or contact being worked by the sales team.
+// Optional cached mirror of an external CRM contact/lead.
+// Salesforce/HubSpot should remain the source of truth.
 // =============================================================================
 
 model Lead {
@@ -384,7 +499,7 @@ model Lead {
   country       String?
   city          String?
 
-  // CRM metadata
+  // Cached CRM metadata
   status        LeadStatus @default(NEW)
   source        LeadSource @default(MANUAL)
   tags          String[]
@@ -428,7 +543,8 @@ model Lead {
 
 // =============================================================================
 // DEAL
-// A sales opportunity linked to a Lead. Tracks the pipeline stage and value.
+// Optional cached mirror of an external CRM opportunity/deal.
+// Salesforce/HubSpot should remain the source of truth.
 // =============================================================================
 
 model Deal {
@@ -617,8 +733,9 @@ model AiInteraction {
 
 // =============================================================================
 // WORKFLOW TRIGGER
-// Event-based automation rules. When an event fires, the action is executed.
-// Evaluation happens in the BullMQ workflow.processor.
+// Future internal automation rules. For the MVP, n8n owns most routing and
+// writeback workflows; Sellora records WebhookEvent and WorkflowRun rows.
+// Evaluation happens in the BullMQ workflow.processor when enabled.
 // =============================================================================
 
 model WorkflowTrigger {
@@ -662,7 +779,7 @@ model WorkflowTrigger {
 
 // =============================================================================
 // API KEY
-// For external integrations (webhooks from Recall.ai, Nylas, etc.)
+// For n8n and external integrations calling Sellora without a user session.
 // Key is stored hashed; the raw key is shown only once on creation.
 // =============================================================================
 
@@ -682,7 +799,205 @@ model ApiKey {
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
+  webhookEvents WebhookEvent[]
+
   @@index([organizationId])
   @@index([keyHash])
   @@map("api_keys")
+}
+
+// =============================================================================
+// INTEGRATION
+// External app connection metadata. n8n should usually hold the real connector
+// credentials; this row lets Sellora know which external systems an org uses.
+// =============================================================================
+
+model Integration {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  provider IntegrationProvider
+  label    String
+  status   IntegrationStatus @default(ACTIVE)
+
+  // Non-secret configuration only: pipeline IDs, object names, field mappings.
+  // Secrets should live in n8n or a dedicated secret manager.
+  config Json?
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  externalMappings ExternalObjectMapping[]
+  webhookEvents    WebhookEvent[]
+  syncLogs         SyncLog[]
+
+  @@index([organizationId])
+  @@index([provider])
+  @@index([status])
+  @@map("integrations")
+}
+
+// =============================================================================
+// EXTERNAL OBJECT MAPPING
+// Maps Sellora-side cached context to CRM/app object IDs.
+// This prevents Sellora from becoming the CRM source of truth.
+// =============================================================================
+
+model ExternalObjectMapping {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  provider           IntegrationProvider
+  externalObjectType ExternalObjectType
+  externalObjectId   String
+  externalUrl        String?
+
+  // Optional local references. These are cache links, not ownership claims.
+  localLeadId String?
+  localDealId String?
+
+  metadata Json?
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  integrationId String?
+  integration   Integration? @relation(fields: [integrationId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, provider, externalObjectType, externalObjectId])
+  @@index([organizationId])
+  @@index([integrationId])
+  @@index([localLeadId])
+  @@index([localDealId])
+  @@map("external_object_mappings")
+}
+
+// =============================================================================
+// WEBHOOK EVENT
+// Immutable intake log for n8n and external systems. Store first, process second.
+// =============================================================================
+
+model WebhookEvent {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  source    WebhookEventSource
+  eventType WebhookEventType
+  status    WebhookEventStatus @default(RECEIVED)
+
+  externalObjectType ExternalObjectType?
+  externalObjectId   String?
+
+  // Raw event body from n8n or the external source.
+  payload Json
+
+  receivedAt  DateTime  @default(now())
+  processedAt DateTime?
+  errorMessage String?
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  apiKeyId String?
+  apiKey   ApiKey? @relation(fields: [apiKeyId], references: [id], onDelete: SetNull)
+
+  integrationId String?
+  integration   Integration? @relation(fields: [integrationId], references: [id], onDelete: SetNull)
+
+  workflowRuns WorkflowRun[]
+  syncLogs     SyncLog[]
+
+  @@index([organizationId])
+  @@index([apiKeyId])
+  @@index([integrationId])
+  @@index([source])
+  @@index([eventType])
+  @@index([status])
+  @@index([externalObjectType, externalObjectId])
+  @@index([receivedAt])
+  @@map("webhook_events")
+}
+
+// =============================================================================
+// WORKFLOW RUN
+// Processing audit trail for AI extraction, grounded answers, and CRM-ready
+// payload generation. n8n can use the output JSON for writeback.
+// =============================================================================
+
+model WorkflowRun {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  type       WorkflowRunType
+  status     WorkflowRunStatus @default(QUEUED)
+  confidence ConfidenceLevel?
+
+  input  Json
+  output Json?
+
+  startedAt   DateTime?
+  completedAt DateTime?
+  errorMessage String?
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  webhookEventId String?
+  webhookEvent   WebhookEvent? @relation(fields: [webhookEventId], references: [id], onDelete: SetNull)
+
+  syncLogs SyncLog[]
+
+  @@index([organizationId])
+  @@index([webhookEventId])
+  @@index([type])
+  @@index([status])
+  @@index([createdAt])
+  @@map("workflow_runs")
+}
+
+// =============================================================================
+// SYNC LOG
+// Records inbound and outbound CRM/app sync attempts. This is critical when n8n
+// updates Salesforce/HubSpot and a customer asks what changed and why.
+// =============================================================================
+
+model SyncLog {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  direction SyncDirection
+  status    SyncStatus @default(PENDING)
+
+  provider           IntegrationProvider
+  externalObjectType ExternalObjectType?
+  externalObjectId   String?
+
+  requestPayload  Json?
+  responsePayload Json?
+  errorMessage    String?
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  integrationId String?
+  integration   Integration? @relation(fields: [integrationId], references: [id], onDelete: SetNull)
+
+  webhookEventId String?
+  webhookEvent   WebhookEvent? @relation(fields: [webhookEventId], references: [id], onDelete: SetNull)
+
+  workflowRunId String?
+  workflowRun   WorkflowRun? @relation(fields: [workflowRunId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([integrationId])
+  @@index([webhookEventId])
+  @@index([workflowRunId])
+  @@index([provider])
+  @@index([status])
+  @@index([createdAt])
+  @@map("sync_logs")
 }
