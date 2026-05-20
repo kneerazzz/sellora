@@ -27,6 +27,7 @@ export function validate(schema: ZodObject) {
       // Replace with parsed (coerced + transformed) values
       req.body = parsed.body ?? req.body
       req.params = (parsed.params ?? req.params) as any
+      req.query = (parsed.query ?? req.query) as any
       
       next()
     } catch (err) {
