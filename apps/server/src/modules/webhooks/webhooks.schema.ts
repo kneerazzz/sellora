@@ -1,6 +1,12 @@
 import { z } from 'zod'
 
 export const webhookEventBodySchema = z.object({
+  query: z.object({
+    process: z
+      .enum(['true', 'false'])
+      .transform((value) => value === 'true')
+      .optional(),
+  }),
   body: z.object({
     source: z
       .enum([
@@ -39,3 +45,4 @@ export const webhookEventBodySchema = z.object({
 })
 
 export type WebhookEventInput = z.infer<typeof webhookEventBodySchema>['body']
+export type WebhookEventQuery = z.infer<typeof webhookEventBodySchema>['query']

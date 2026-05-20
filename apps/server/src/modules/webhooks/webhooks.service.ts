@@ -91,6 +91,19 @@ async function intakeWebhookEvent(params: {
   })
 }
 
+function buildWebhookAcceptedResponse(result: Awaited<ReturnType<typeof intakeWebhookEvent>>) {
+  return {
+    webhookEventId: result.webhookEvent.id,
+    workflowRunId: result.workflowRun.id,
+    status: result.workflowRun.status,
+    workflowType: result.workflowRun.type,
+    processUrl: `/api/v1/workflow-runs/${result.workflowRun.id}/process`,
+    webhookEvent: result.webhookEvent,
+    workflowRun: result.workflowRun,
+  }
+}
+
 export const webhooksService = {
   intakeWebhookEvent,
+  buildWebhookAcceptedResponse,
 }
