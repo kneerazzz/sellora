@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs'
 import { prisma } from '../../config/prisma'
 import { ApiError } from '../../utils/apiError'
+import { buildAuthUser } from '../../utils/authUser'
 import type {
   AuthUser
 } from '../../types/auth.types'
@@ -8,27 +9,6 @@ import type {
 // ── Constants ─────────────────────────────────────────────────────────────────  
 
 const BCRYPT_ROUNDS = 12
-
-
-
-function buildAuthUser(user: {
-  id: string
-  email: string
-  firstName: string
-  lastName: string
-  role: any
-  organizationId: string
-}): AuthUser {
-  return {
-    id: user.id,
-    email: user.email,
-    firstName: user.firstName,
-    lastName: user.lastName,
-    role: user.role,
-    organizationId: user.organizationId,
-  }
-}
-
 
 /**
  * Get the currently authenticated user's full profile.

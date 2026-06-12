@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '../../config/prisma'
 import { ApiError } from '../../utils/apiError'
 import { normalizeWebhookPayloadForExtraction } from '../../utils/aiExtraction'
+import { buildPaginatedResult, getPaginationParams } from '../../utils/pagination'
 import { aiExtractionsService } from '../aiExtractions/aiExtractions.service'
 import { groundedAnswersService } from '../groundedAnswers/groundedAnswers.service'
 import type { PaginatedResult } from '../../types/pagination.types'
@@ -67,9 +68,7 @@ async function listWorkflowRuns(
   query: ListWorkflowRunsQuery,
   organizationId: string
 ): Promise<PaginatedResult<WorkflowRunListPayload>> {
-  const page = query.page ?? 1
-  const limit = query.limit ?? 20
-  const skip = (page - 1) * limit
+  const { page, limit, skip } = getPaginationParams(query)
 
   const where: Prisma.WorkflowRunWhereInput = {
     organizationId,
@@ -88,17 +87,7 @@ async function listWorkflowRuns(
     prisma.workflowRun.count({ where }),
   ])
 
-  const totalPages = Math.ceil(total / limit)
-
-  return {
-    items,
-    total,
-    page,
-    limit,
-    totalPages,
-    hasNextPage: page < totalPages,
-    hasPrevPage: page > 1,
-  }
+  return buildPaginatedResult({ items, total, page, limit })
 }
 
 async function getWorkflowRunById(

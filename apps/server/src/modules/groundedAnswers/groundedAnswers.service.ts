@@ -1,63 +1,18 @@
 import { prisma } from '../../config/prisma'
+import {
+  buildExtractiveAnswer,
+  buildSnippet,
+  scoreByTokenOverlap,
+  tokenizeForRetrieval,
+} from '../../utils/localRetrieval'
 import type { GroundedAnswerInput } from './groundedAnswers.schema'
-
-const STOP_WORDS = new Set([
-  'about',
-  'after',
-  'also',
-  'and',
-  'are',
-  'can',
-  'for',
-  'from',
-  'have',
-  'how',
-  'into',
-  'our',
-  'that',
-  'the',
-  'this',
-  'what',
-  'when',
-  'where',
-  'which',
-  'with',
-  'you',
-  'your',
-])
-
-function tokenize(value: string): string[] {
-  return value
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter((token) => token.length > 2 && !STOP_WORDS.has(token))
-}
-
-function scoreText(questionTokens: string[], text: string): number {
-  const lowerText = text.toLowerCase()
-  return questionTokens.reduce((score, token) => {
-    return lowerText.includes(token) ? score + 1 : score
-  }, 0)
-}
-
-function buildSnippet(text: string, maxLength = 450): string {
-  const compact = text.replace(/\s+/g, ' ').trim()
-  return compact.length > maxLength ? `${compact.slice(0, maxLength).trim()}...` : compact
-}
-
-function buildExtractiveAnswer(question: string, snippets: string[]): string {
-  return [
-    `Based on the indexed documents, the answer to "${question}" is:`,
-    snippets.map((snippet, index) => `${index + 1}. ${snippet}`).join('\n'),
-  ].join('\n\n')
-}
 
 async function answerQuestion(input: GroundedAnswerInput, context: {
   organizationId: string
   userId?: string
 }) {
   const maxCitations = input.maxCitations ?? 5
-  const questionTokens = tokenize(input.question)
+  const questionTokens = tokenizeForRetrieval(input.question)
 
   const chunks = await prisma.documentChunk.findMany({
     where: {
@@ -89,7 +44,7 @@ async function answerQuestion(input: GroundedAnswerInput, context: {
   const scored = chunks
     .map((chunk) => ({
       chunk,
-      score: questionTokens.length > 0 ? scoreText(questionTokens, chunk.text) : 0,
+      score: questionTokens.length > 0 ? scoreByTokenOverlap(questionTokens, chunk.text) : 0,
     }))
     .filter((item) => item.score > 0)
     .sort((a, b) => b.score - a.score)

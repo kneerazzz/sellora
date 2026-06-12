@@ -1,7 +1,8 @@
-import crypto from 'node:crypto'
 import { Prisma, InviteStatus } from '@prisma/client'
 import { prisma } from '../../config/prisma'
 import { ApiError } from '../../utils/apiError'
+import { randomHex } from '../../utils/crypto'
+import { buildPaginatedResult, getPaginationParams } from '../../utils/pagination'
 import type { CreateInviteInput, ListInvitesQuery } from './invites.schema'
 import type { PaginatedResult } from '../../types/pagination.types'
 
@@ -86,7 +87,7 @@ async function createInvite(
   // - it's stored in plain text in the DB (not hashed, unlike refresh tokens)
   // - it's short-lived (48h) and single-use
   // - the invite record itself holds all the data (email, role, org)
-  const rawToken = crypto.randomBytes(32).toString('hex')
+  const rawToken = randomHex(32)
 
   const invite = await prisma.invite.create({
     data: {
@@ -166,9 +167,7 @@ async function listInvites(
   query: ListInvitesQuery,
   organizationId: string
 ): Promise<PaginatedResult<InvitePayload>> {
-  const page  = query.page  ?? 1
-  const limit = query.limit ?? 20
-  const skip  = (page - 1) * limit
+  const { page, limit, skip } = getPaginationParams(query)
 
   const where: Prisma.InviteWhereInput = {
     organizationId,
@@ -186,17 +185,7 @@ async function listInvites(
     prisma.invite.count({ where }),
   ])
 
-  const totalPages = Math.ceil(total / limit)
-
-  return {
-    items,
-    total,
-    page,
-    limit,
-    totalPages,
-    hasNextPage: page < totalPages,
-    hasPrevPage: page > 1,
-  }
+  return buildPaginatedResult({ items, total, page, limit })
 }
 
 /**
@@ -261,7 +250,7 @@ async function resendInvite(
   }
 
   // Revoke old + create fresh in one transaction
-  const rawToken = crypto.randomBytes(32).toString('hex')
+  const rawToken = randomHex(32)
 
   const [, newInvite] = await prisma.$transaction([
     prisma.invite.update({

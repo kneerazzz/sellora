@@ -1,6 +1,7 @@
 import { Prisma, UserRole } from '@prisma/client'
 import { prisma } from '../../config/prisma'
 import { ApiError } from '../../utils/apiError'
+import { buildPaginatedResult, getPaginationParams } from '../../utils/pagination'
 import type { CreateLeadInput, UpdateLeadInput, ListLeadsQuery } from './leads.schema'
 import type { PaginatedResult } from '../../types/pagination.types'
 
@@ -207,11 +208,9 @@ async function listLeads(
   query: ListLeadsQuery,
   caller: CallerContext
 ): Promise<PaginatedResult<LeadPayload>> {
-  const page      = query.page      ?? 1
-  const limit     = query.limit     ?? 20
+  const { page, limit, skip } = getPaginationParams(query)
   const sortBy    = query.sortBy    ?? 'createdAt'
   const sortOrder = query.sortOrder ?? 'desc'
-  const skip      = (page - 1) * limit
 
   const where: Prisma.LeadWhereInput = {
     // buildLeadScope handles REP scoping automatically
@@ -250,17 +249,7 @@ async function listLeads(
     prisma.lead.count({ where }),
   ])
 
-  const totalPages = Math.ceil(total / limit)
-
-  return {
-    items,
-    total,
-    page,
-    limit,
-    totalPages,
-    hasNextPage: page < totalPages,
-    hasPrevPage: page > 1,
-  }
+  return buildPaginatedResult({ items, total, page, limit })
 }
 
 async function updateLead(

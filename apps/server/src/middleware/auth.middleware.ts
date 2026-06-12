@@ -1,8 +1,8 @@
 import { Request, Response, NextFunction } from 'express'
 import jwt from 'jsonwebtoken'
-import crypto from 'node:crypto'
 import { ApiError } from '../utils/apiError'
 import { prisma } from '../config/prisma'
+import { sha256Hex } from '../utils/crypto'
 import type { JwtAccessPayload } from '../types/auth.types'
 import { ApiKeyScope, UserRole } from '@prisma/client'
 
@@ -19,10 +19,6 @@ function extractBearerToken(req: Request): string {
   }
 
   return token
-}
-
-function hashApiKey(rawKey: string): string {
-  return crypto.createHash('sha256').update(rawKey).digest('hex')
 }
 
 /**
@@ -83,7 +79,7 @@ export function authenticateApiKey(...allowedScopes: ApiKeyScope[]) {
   ): Promise<void> => {
     try {
       const rawKey = extractBearerToken(req)
-      const keyHash = hashApiKey(rawKey)
+      const keyHash = sha256Hex(rawKey)
 
       const apiKey = await prisma.apiKey.findUnique({
         where: { keyHash },

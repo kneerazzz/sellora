@@ -1,7 +1,8 @@
-import crypto from 'node:crypto'
 import { ApiKeyScope, Prisma } from '@prisma/client'
 import { prisma } from '../../config/prisma'
 import { ApiError } from '../../utils/apiError'
+import { randomBase64Url, sha256Hex } from '../../utils/crypto'
+import { buildPaginatedResult, getPaginationParams } from '../../utils/pagination'
 import type { PaginatedResult } from '../../types/pagination.types'
 import type { CreateApiKeyInput, ListApiKeysQuery } from './apiKeys.schema'
 
@@ -20,12 +21,8 @@ const apiKeySelect = {
 
 export type ApiKeyPayload = Prisma.ApiKeyGetPayload<{ select: typeof apiKeySelect }>
 
-function hashApiKey(rawKey: string): string {
-  return crypto.createHash('sha256').update(rawKey).digest('hex')
-}
-
 function generateApiKey(): string {
-  return `sk_sellora_${crypto.randomBytes(32).toString('base64url')}`
+  return `sk_sellora_${randomBase64Url(32)}`
 }
 
 async function createApiKey(
@@ -42,7 +39,7 @@ async function createApiKey(
       label: input.label,
       scope: input.scope as ApiKeyScope,
       expiresAt: input.expiresAt,
-      keyHash: hashApiKey(rawKey),
+      keyHash: sha256Hex(rawKey),
       keyPrefix: rawKey.slice(0, 18),
       organizationId,
     },
@@ -56,9 +53,7 @@ async function listApiKeys(
   query: ListApiKeysQuery,
   organizationId: string
 ): Promise<PaginatedResult<ApiKeyPayload>> {
-  const page = query.page ?? 1
-  const limit = query.limit ?? 20
-  const skip = (page - 1) * limit
+  const { page, limit, skip } = getPaginationParams(query)
 
   const where: Prisma.ApiKeyWhereInput = {
     organizationId,
@@ -76,17 +71,7 @@ async function listApiKeys(
     prisma.apiKey.count({ where }),
   ])
 
-  const totalPages = Math.ceil(total / limit)
-
-  return {
-    items,
-    total,
-    page,
-    limit,
-    totalPages,
-    hasNextPage: page < totalPages,
-    hasPrevPage: page > 1,
-  }
+  return buildPaginatedResult({ items, total, page, limit })
 }
 
 async function revokeApiKey(

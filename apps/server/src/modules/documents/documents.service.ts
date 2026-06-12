@@ -1,10 +1,16 @@
 import { Prisma } from '@prisma/client'
-import { randomUUID } from 'node:crypto'
-import { mkdir, writeFile } from 'node:fs/promises'
-import path from 'node:path'
 import { env } from '../../config/env'
 import { prisma } from '../../config/prisma'
 import { ApiError } from '../../utils/apiError'
+import {
+  buildLocalVectorIds,
+  chunkText,
+  estimateTokens,
+  inferDocumentType,
+  inferMimeType,
+  storeTextUpload,
+} from '../../utils/documentProcessing'
+import { buildPaginatedResult, getPaginationParams } from '../../utils/pagination'
 import type { PaginatedResult } from '../../types/pagination.types'
 import type {
   CreateDocumentInput,
@@ -37,77 +43,6 @@ const documentSelect = {
 
 export type DocumentPayload = Prisma.DocumentGetPayload<{ select: typeof documentSelect }>
 
-function chunkText(text: string, maxChars = 1800): string[] {
-  const normalized = text.replace(/\r\n/g, '\n').trim()
-  const chunks: string[] = []
-  let index = 0
-
-  while (index < normalized.length) {
-    const next = normalized.slice(index, index + maxChars)
-    const lastBreak = next.lastIndexOf('\n\n')
-    const boundary = lastBreak > 500 ? lastBreak + 2 : next.length
-    const chunk = normalized.slice(index, index + boundary).trim()
-
-    if (chunk) chunks.push(chunk)
-    index += boundary
-  }
-
-  return chunks
-}
-
-function estimateTokens(text: string): number {
-  return Math.max(1, Math.ceil(text.length / 4))
-}
-
-function sanitizeFilename(filename: string): string {
-  return path.basename(filename).replace(/[^a-zA-Z0-9._-]/g, '_')
-}
-
-function inferFileType(filename: string, mimeType?: string) {
-  const extension = path.extname(filename).toLowerCase()
-
-  if (mimeType === 'text/markdown' || ['.md', '.markdown'].includes(extension)) return 'MARKDOWN' as const
-  if (mimeType === 'text/plain' || extension === '.txt') return 'TXT' as const
-  if (mimeType === 'application/pdf' || extension === '.pdf') return 'PDF' as const
-  if (
-    mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
-    extension === '.docx'
-  ) {
-    return 'DOCX' as const
-  }
-
-  return null
-}
-
-function inferMimeType(fileType: NonNullable<ReturnType<typeof inferFileType>>) {
-  switch (fileType) {
-    case 'MARKDOWN':
-      return 'text/markdown'
-    case 'TXT':
-      return 'text/plain'
-    case 'PDF':
-      return 'application/pdf'
-    case 'DOCX':
-      return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-  }
-}
-
-async function storeUploadedFile(input: UploadDocumentInput, organizationId: string) {
-  const safeFilename = sanitizeFilename(input.filename)
-  const storageKey = `${organizationId}/${randomUUID()}-${safeFilename}`
-  const storagePath = path.join(env.DOCUMENT_STORAGE_DIR, storageKey)
-  const fileBuffer = Buffer.from(input.content, input.encoding ?? 'utf8')
-
-  await mkdir(path.dirname(storagePath), { recursive: true })
-  await writeFile(storagePath, fileBuffer)
-
-  return {
-    storagePath,
-    sizeBytes: fileBuffer.byteLength,
-    text: fileBuffer.toString('utf8'),
-  }
-}
-
 async function createDocument(
   input: CreateDocumentInput,
   context: { organizationId: string; userId: string }
@@ -133,7 +68,7 @@ async function uploadDocument(
   input: UploadDocumentInput,
   context: { organizationId: string; userId: string }
 ): Promise<DocumentPayload> {
-  const inferredFileType = input.fileType ?? inferFileType(input.filename, input.mimeType)
+  const inferredFileType = input.fileType ?? inferDocumentType(input.filename, input.mimeType)
 
   if (!inferredFileType) {
     throw ApiError.badRequest('Unsupported document type')
@@ -143,7 +78,11 @@ async function uploadDocument(
     throw ApiError.badRequest('Upload ingestion currently supports TXT and Markdown files')
   }
 
-  const stored = await storeUploadedFile(input, context.organizationId)
+  const stored = await storeTextUpload({
+    input,
+    organizationId: context.organizationId,
+    storageRoot: env.DOCUMENT_STORAGE_DIR,
+  })
   const chunks = chunkText(stored.text)
 
   if (chunks.length === 0) {
@@ -168,7 +107,7 @@ async function uploadDocument(
       select: { id: true },
     })
 
-    const pineconeIds = chunks.map((_, index) => `local:${document.id}:${index}`)
+    const pineconeIds = buildLocalVectorIds(document.id, chunks.length)
 
     await tx.documentChunk.createMany({
       data: chunks.map((text, index) => ({
@@ -199,9 +138,7 @@ async function listDocuments(
   query: ListDocumentsQuery,
   organizationId: string
 ): Promise<PaginatedResult<DocumentPayload>> {
-  const page = query.page ?? 1
-  const limit = query.limit ?? 20
-  const skip = (page - 1) * limit
+  const { page, limit, skip } = getPaginationParams(query)
   const where: Prisma.DocumentWhereInput = {
     organizationId,
     ...(query.status && { status: query.status }),
@@ -225,17 +162,7 @@ async function listDocuments(
     prisma.document.count({ where }),
   ])
 
-  const totalPages = Math.ceil(total / limit)
-
-  return {
-    items,
-    total,
-    page,
-    limit,
-    totalPages,
-    hasNextPage: page < totalPages,
-    hasPrevPage: page > 1,
-  }
+  return buildPaginatedResult({ items, total, page, limit })
 }
 
 async function getDocumentById(documentId: string, organizationId: string): Promise<DocumentPayload> {
@@ -283,7 +210,7 @@ async function ingestDocumentText(
       where: { documentId },
     })
 
-    const pineconeIds = chunks.map((_, index) => `local:${documentId}:${index}`)
+    const pineconeIds = buildLocalVectorIds(documentId, chunks.length)
 
     await tx.documentChunk.createMany({
       data: chunks.map((text, index) => ({

@@ -1,8 +1,9 @@
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
-import crypto from 'node:crypto'
 import { prisma } from '../../config/prisma'
 import { ApiError } from '../../utils/apiError'
+import { buildAuthUser } from '../../utils/authUser'
+import { randomHex, sha256Hex } from '../../utils/crypto'
 import type { RegisterInput, LoginInput } from './auth.schema'
 import type {
   JwtAccessPayload,
@@ -16,36 +17,13 @@ import type {
 const BCRYPT_ROUNDS = 12
 const ACCESS_TOKEN_EXPIRES = process.env.JWT_ACCESS_EXPIRES_IN ?? '15m'
 const REFRESH_TOKEN_EXPIRES_MS = 7 * 24 * 60 * 60 * 1000 // 7 days in ms
-const INVITE_EXPIRES_MS = 48 * 60 * 60 * 1000             // 48 hours in ms
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-function hashToken(raw: string): string {
-  return crypto.createHash('sha256').update(raw).digest('hex')
-}
 
 function generateAccessToken(payload: JwtAccessPayload): string {
   return jwt.sign(payload, process.env.JWT_ACCESS_SECRET as string, {
     expiresIn: ACCESS_TOKEN_EXPIRES,
   } as jwt.SignOptions)
-}
-
-function buildAuthUser(user: {
-  id: string
-  email: string
-  firstName: string
-  lastName: string
-  role: any
-  organizationId: string
-}): AuthUser {
-  return {
-    id: user.id,
-    email: user.email,
-    firstName: user.firstName,
-    lastName: user.lastName,
-    role: user.role,
-    organizationId: user.organizationId,
-  }
 }
 
 // ── Service methods ───────────────────────────────────────────────────────────
@@ -149,7 +127,7 @@ async function refresh(
   rawRefreshToken: string,
   meta: { ipAddress?: string; userAgent?: string }
 ): Promise<{ user: AuthUser; tokens: AuthTokens }> {
-  const tokenHash = hashToken(rawRefreshToken)
+  const tokenHash = sha256Hex(rawRefreshToken)
 
   const storedToken = await prisma.refreshToken.findUnique({
     where: { token: tokenHash },
@@ -191,7 +169,7 @@ async function refresh(
  * Logout — revoke the current refresh token (current device only).
  */
 async function logout(rawRefreshToken: string): Promise<void> {
-  const tokenHash = hashToken(rawRefreshToken)
+  const tokenHash = sha256Hex(rawRefreshToken)
   await prisma.refreshToken.updateMany({
     where: { token: tokenHash },
     data: { isRevoked: true },
@@ -441,8 +419,8 @@ async function issueTokens(
   user: { id: string; email: string; role: any; organizationId: string },
   meta: { ipAddress?: string; userAgent?: string }
 ): Promise<AuthTokens> {
-  const rawRefreshToken = crypto.randomBytes(64).toString('hex')
-  const tokenHash = hashToken(rawRefreshToken)
+  const rawRefreshToken = randomHex(64)
+  const tokenHash = sha256Hex(rawRefreshToken)
 
   const accessPayload: JwtAccessPayload = {
     sub: user.id,
