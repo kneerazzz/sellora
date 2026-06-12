@@ -5,7 +5,10 @@
   "main": "index.js",
   "scripts": {
     "start": "tsx src/index.ts",
-    "dev": "tsx watch src/index.ts"
+    "dev": "tsx watch src/index.ts",
+    "worker:workflows": "tsx src/workers/workflowWorker.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test \"src/**/*.test.ts\""
   },
   "keywords": [],
   "author": "",

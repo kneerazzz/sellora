@@ -3,6 +3,7 @@ import { prisma } from '../../config/prisma'
 import { ApiError } from '../../utils/apiError'
 import { normalizeWebhookPayloadForExtraction } from '../../utils/aiExtraction'
 import { aiExtractionsService } from '../aiExtractions/aiExtractions.service'
+import { groundedAnswersService } from '../groundedAnswers/groundedAnswers.service'
 import type { PaginatedResult } from '../../types/pagination.types'
 import type { ListWorkflowRunsQuery } from './workflowRuns.schema'
 
@@ -149,7 +150,10 @@ async function processWorkflowRun(params: {
     throw ApiError.badRequest('Workflow run is already running')
   }
 
-  if (workflowRun.type !== 'SALES_EVENT_EXTRACTION') {
+  if (
+    workflowRun.type !== 'SALES_EVENT_EXTRACTION' &&
+    workflowRun.type !== 'GROUNDED_TECHNICAL_ANSWER'
+  ) {
     throw ApiError.badRequest(`Workflow type ${workflowRun.type} is not supported yet`)
   }
 
@@ -163,6 +167,72 @@ async function processWorkflowRun(params: {
   })
 
   try {
+    if (workflowRun.type === 'GROUNDED_TECHNICAL_ANSWER') {
+      const input =
+        workflowRun.input && typeof workflowRun.input === 'object' && !Array.isArray(workflowRun.input)
+          ? (workflowRun.input as Record<string, unknown>)
+          : {}
+      const question =
+        input.question ??
+        input.content ??
+        input.text ??
+        input.message
+
+      if (typeof question !== 'string' || question.trim().length < 3) {
+        throw ApiError.badRequest('Grounded answer workflow requires a question')
+      }
+
+      const result = await groundedAnswersService.answerQuestion(
+        {
+          question,
+          documentIds: Array.isArray(input.documentIds)
+            ? input.documentIds.filter((id): id is string => typeof id === 'string')
+            : undefined,
+        },
+        {
+          organizationId: params.organizationId,
+          userId: params.userId,
+        }
+      )
+
+      const updated = await prisma.workflowRun.update({
+        where: { id: workflowRun.id },
+        data: {
+          status: result.refused ? 'NEEDS_REVIEW' : 'COMPLETED',
+          confidence: result.confidence,
+          output: result as unknown as Prisma.InputJsonValue,
+          completedAt: new Date(),
+          errorMessage: null,
+        },
+        select: {
+          id: true,
+          type: true,
+          status: true,
+          confidence: true,
+          input: true,
+          output: true,
+          startedAt: true,
+          completedAt: true,
+          errorMessage: true,
+          organizationId: true,
+          webhookEventId: true,
+        },
+      })
+
+      if (workflowRun.webhookEventId) {
+        await prisma.webhookEvent.update({
+          where: { id: workflowRun.webhookEventId },
+          data: {
+            status: result.refused ? 'IGNORED' : 'COMPLETED',
+            processedAt: new Date(),
+            errorMessage: result.refused ? 'Insufficient grounded document context' : null,
+          },
+        })
+      }
+
+      return updated
+    }
+
     const extractionInput = workflowRun.webhookEvent
       ? normalizeWebhookPayloadForExtraction({
           eventType: workflowRun.webhookEvent.eventType,
@@ -241,8 +311,59 @@ async function processWorkflowRun(params: {
   }
 }
 
+async function processNextQueuedWorkflowRun(params: {
+  organizationId?: string
+  userId?: string
+}) {
+  const workflowRun = await prisma.workflowRun.findFirst({
+    where: {
+      status: 'QUEUED',
+      type: { in: ['SALES_EVENT_EXTRACTION', 'GROUNDED_TECHNICAL_ANSWER'] },
+      ...(params.organizationId && { organizationId: params.organizationId }),
+    },
+    select: {
+      id: true,
+      organizationId: true,
+    },
+    orderBy: { createdAt: 'asc' },
+  })
+
+  if (!workflowRun) {
+    return null
+  }
+
+  return processWorkflowRun({
+    workflowRunId: workflowRun.id,
+    organizationId: workflowRun.organizationId,
+    userId: params.userId,
+  })
+}
+
+async function processQueuedWorkflowRuns(params: {
+  organizationId?: string
+  userId?: string
+  limit?: number
+}) {
+  const limit = params.limit ?? 10
+  const processed = []
+
+  for (let index = 0; index < limit; index += 1) {
+    const workflowRun = await processNextQueuedWorkflowRun({
+      organizationId: params.organizationId,
+      userId: params.userId,
+    })
+
+    if (!workflowRun) break
+    processed.push(workflowRun)
+  }
+
+  return processed
+}
+
 export const workflowRunsService = {
   listWorkflowRuns,
   getWorkflowRunById,
   processWorkflowRun,
+  processNextQueuedWorkflowRun,
+  processQueuedWorkflowRuns,
 }

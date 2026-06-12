@@ -11,9 +11,13 @@ const envSchema = z.object({
   JWT_ACCESS_EXPIRES_IN: z.string().default('15m'),
   JWT_REFRESH_EXPIRES_IN: z.string().default('7d'),
   CLIENT_URL: z.string().default('http://localhost:3000'),
-  OPENAI_API_KEY: z.string().min(1),
-  PINECONE_API_KEY: z.string().min(1),
-  PINECONE_INDEX_NAME: z.string().min(1),
+  AI_PROVIDER: z.enum(['openai', 'groq']).default('groq'),
+  OPENAI_API_KEY: z.string().optional(),
+  OPENAI_EXTRACTION_MODEL: z.string().optional(),
+  GROQ_API_KEY: z.string().optional(),
+  GROQ_EXTRACTION_MODEL: z.string().optional(),
+  PINECONE_API_KEY: z.string().optional(),
+  PINECONE_INDEX_NAME: z.string().optional(),
 })
 
 const parsed = envSchema.safeParse(process.env)

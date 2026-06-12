@@ -7,7 +7,9 @@ import {
 } from '../modules/aiExtractions/aiExtractions.schema'
 
 const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses'
-const DEFAULT_MODEL = 'gpt-4o-mini'
+const GROQ_CHAT_COMPLETIONS_URL = 'https://api.groq.com/openai/v1/chat/completions'
+const DEFAULT_OPENAI_MODEL = 'gpt-4o-mini'
+const DEFAULT_GROQ_MODEL = 'llama-3.1-8b-instant'
 
 export const salesExtractionSystemPrompt = [
   'You are Sellora, an AI assistant for high-ticket B2B technical sales teams.',
@@ -55,6 +57,17 @@ const salesExtractionJsonSchema = {
   ],
 }
 
+type AiProvider = 'openai' | 'groq'
+
+function getAiProvider(): AiProvider {
+  const provider = (process.env.AI_PROVIDER ?? 'groq').toLowerCase()
+  if (provider !== 'openai' && provider !== 'groq') {
+    throw ApiError.internal('AI_PROVIDER must be either "openai" or "groq"')
+  }
+
+  return provider
+}
+
 function getOpenAiConfig() {
   const apiKey = process.env.OPENAI_API_KEY
   if (!apiKey) {
@@ -63,7 +76,19 @@ function getOpenAiConfig() {
 
   return {
     apiKey,
-    model: process.env.OPENAI_EXTRACTION_MODEL ?? process.env.OPENAI_MODEL ?? DEFAULT_MODEL,
+    model: process.env.OPENAI_EXTRACTION_MODEL ?? process.env.OPENAI_MODEL ?? DEFAULT_OPENAI_MODEL,
+  }
+}
+
+function getGroqConfig() {
+  const apiKey = process.env.GROQ_API_KEY
+  if (!apiKey) {
+    throw ApiError.internal('GROQ_API_KEY is not configured')
+  }
+
+  return {
+    apiKey,
+    model: process.env.GROQ_EXTRACTION_MODEL ?? process.env.GROQ_MODEL ?? DEFAULT_GROQ_MODEL,
   }
 }
 
@@ -99,7 +124,22 @@ function extractOutputText(response: any): string | null {
   return null
 }
 
-export async function callOpenAiForSalesExtraction(
+function extractChatCompletionContent(response: any): string | null {
+  const content = response?.choices?.[0]?.message?.content
+  return typeof content === 'string' ? content : null
+}
+
+function parseJsonOutput(rawResponse: string): SalesExtractionOutput {
+  const trimmed = rawResponse.trim()
+  const withoutFence = trimmed
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim()
+
+  return salesExtractionOutputSchema.parse(JSON.parse(withoutFence))
+}
+
+async function callOpenAiForSalesExtraction(
   input: SalesExtractionInput
 ): Promise<{
   output: SalesExtractionOutput
@@ -150,8 +190,7 @@ export async function callOpenAiForSalesExtraction(
     throw ApiError.internal('OpenAI response did not include output text')
   }
 
-  const parsedJson = JSON.parse(rawResponse)
-  const output = salesExtractionOutputSchema.parse(parsedJson)
+  const output = parseJsonOutput(rawResponse)
   const usage = data?.usage ?? {}
 
   return {
@@ -167,6 +206,85 @@ export async function callOpenAiForSalesExtraction(
     },
     latencyMs,
   }
+}
+
+async function callGroqForSalesExtraction(
+  input: SalesExtractionInput
+): Promise<{
+  output: SalesExtractionOutput
+  model: string
+  systemPrompt: string
+  userPrompt: string
+  rawResponse: string
+  usage: { promptTokens: number; completionTokens: number; totalTokens: number }
+  latencyMs: number
+}> {
+  const { apiKey, model } = getGroqConfig()
+  const userPrompt = buildSalesExtractionPrompt(input)
+  const startedAt = Date.now()
+
+  const response = await fetch(GROQ_CHAT_COMPLETIONS_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        {
+          role: 'system',
+          content: [
+            salesExtractionSystemPrompt,
+            'Return only a JSON object. Do not wrap the JSON in Markdown.',
+            `The JSON object must match this schema: ${JSON.stringify(salesExtractionJsonSchema)}`,
+          ].join('\n'),
+        },
+        { role: 'user', content: userPrompt },
+      ],
+      temperature: 0,
+      response_format: { type: 'json_object' },
+    }),
+  })
+
+  const data = await response.json().catch(() => null)
+  const latencyMs = Date.now() - startedAt
+
+  if (!response.ok) {
+    const message = data?.error?.message ?? 'Groq extraction request failed'
+    throw ApiError.internal(message)
+  }
+
+  const rawResponse = extractChatCompletionContent(data)
+  if (!rawResponse) {
+    throw ApiError.internal('Groq response did not include message content')
+  }
+
+  const output = parseJsonOutput(rawResponse)
+  const usage = data?.usage ?? {}
+
+  return {
+    output,
+    model,
+    systemPrompt: salesExtractionSystemPrompt,
+    userPrompt,
+    rawResponse,
+    usage: {
+      promptTokens: usage.prompt_tokens ?? 0,
+      completionTokens: usage.completion_tokens ?? 0,
+      totalTokens: usage.total_tokens ?? 0,
+    },
+    latencyMs,
+  }
+}
+
+export async function callLlmForSalesExtraction(
+  input: SalesExtractionInput
+): ReturnType<typeof callOpenAiForSalesExtraction> {
+  const provider = getAiProvider()
+  return provider === 'openai'
+    ? callOpenAiForSalesExtraction(input)
+    : callGroqForSalesExtraction(input)
 }
 
 export function normalizeWebhookPayloadForExtraction(params: {

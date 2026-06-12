@@ -8,7 +8,7 @@
     "noEmit": true,
     "strict": true,
     "esModuleInterop": true,
-    "skipLibCheck": true, // This usually ignores errors in node_modules, but "types" is stronger
+    "skipLibCheck": true,
     "ignoreDeprecations": "6.0",
     "baseUrl": ".",
     "paths": {

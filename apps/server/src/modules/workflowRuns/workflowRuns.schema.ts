@@ -26,4 +26,13 @@ export const workflowRunIdParamSchema = z.object({
   }),
 })
 
+export const processQueuedWorkflowRunsSchema = z.object({
+  body: z.object({
+    limit: z.coerce.number().int().min(1).max(25).default(10).optional(),
+  }),
+})
+
 export type ListWorkflowRunsQuery = z.infer<typeof listWorkflowRunsSchema>['query']
+export type ProcessQueuedWorkflowRunsInput = z.infer<
+  typeof processQueuedWorkflowRunsSchema
+>['body']

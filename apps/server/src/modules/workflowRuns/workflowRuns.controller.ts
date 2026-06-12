@@ -2,7 +2,10 @@ import { Request, Response } from 'express'
 import { ApiResponse } from '../../utils/apiResponse'
 import { asyncHandler } from '../../utils/asyncHandler'
 import { workflowRunsService } from './workflowRuns.service'
-import type { ListWorkflowRunsQuery } from './workflowRuns.schema'
+import type {
+  ListWorkflowRunsQuery,
+  ProcessQueuedWorkflowRunsInput,
+} from './workflowRuns.schema'
 
 const listWorkflowRuns = asyncHandler(async (req: Request, res: Response) => {
   const result = await workflowRunsService.listWorkflowRuns(
@@ -41,8 +44,30 @@ const processWorkflowRun = asyncHandler(async (req: Request, res: Response) => {
   res.status(200).json(ApiResponse.ok('Workflow run processed', workflowRun))
 })
 
+const processNextQueuedWorkflowRun = asyncHandler(async (req: Request, res: Response) => {
+  const workflowRun = await workflowRunsService.processNextQueuedWorkflowRun({
+    organizationId: req.user.organizationId,
+    userId: req.user.id,
+  })
+
+  res.status(200).json(ApiResponse.ok('Next queued workflow run processed', workflowRun))
+})
+
+const processQueuedWorkflowRuns = asyncHandler(async (req: Request, res: Response) => {
+  const input = req.body as ProcessQueuedWorkflowRunsInput
+  const workflowRuns = await workflowRunsService.processQueuedWorkflowRuns({
+    organizationId: req.user.organizationId,
+    userId: req.user.id,
+    limit: input.limit,
+  })
+
+  res.status(200).json(ApiResponse.ok('Queued workflow runs processed', workflowRuns))
+})
+
 export const workflowRunsController = {
   listWorkflowRuns,
   getWorkflowRunById,
   processWorkflowRun,
+  processNextQueuedWorkflowRun,
+  processQueuedWorkflowRuns,
 }

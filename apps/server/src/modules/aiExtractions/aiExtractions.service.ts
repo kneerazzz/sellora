@@ -1,6 +1,6 @@
 import { prisma } from '../../config/prisma'
 import { ApiError } from '../../utils/apiError'
-import { callOpenAiForSalesExtraction } from '../../utils/aiExtraction'
+import { callLlmForSalesExtraction } from '../../utils/aiExtraction'
 import {
   salesExtractionBodySchema,
   type SalesExtractionInput,
@@ -32,7 +32,7 @@ async function extractSalesEvent(
     if (!deal) throw ApiError.notFound('Deal not found')
   }
 
-  const result = await callOpenAiForSalesExtraction(validatedInput)
+  const result = await callLlmForSalesExtraction(validatedInput)
 
   const aiInteraction = await prisma.aiInteraction.create({
     data: {

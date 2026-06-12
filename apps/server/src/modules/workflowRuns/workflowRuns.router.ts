@@ -4,6 +4,7 @@ import { validate } from '../../middleware/validate.middleware'
 import { workflowRunsController } from './workflowRuns.controller'
 import {
   listWorkflowRunsSchema,
+  processQueuedWorkflowRunsSchema,
   workflowRunIdParamSchema,
 } from './workflowRuns.schema'
 
@@ -15,6 +16,19 @@ workflowRunsRouter.get(
   '/',
   validate(listWorkflowRunsSchema),
   workflowRunsController.listWorkflowRuns
+)
+
+workflowRunsRouter.post(
+  '/process-next',
+  authorize('ADMIN', 'MANAGER'),
+  workflowRunsController.processNextQueuedWorkflowRun
+)
+
+workflowRunsRouter.post(
+  '/process-queued',
+  authorize('ADMIN', 'MANAGER'),
+  validate(processQueuedWorkflowRunsSchema),
+  workflowRunsController.processQueuedWorkflowRuns
 )
 
 workflowRunsRouter.get(

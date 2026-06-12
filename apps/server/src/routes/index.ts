@@ -9,8 +9,10 @@ import { apiKeysRouter } from '../modules/apiKeys/apiKeys.router'
 import { webhooksRouter } from '../modules/webhooks/webhooks.router'
 import { aiExtractionsRouter } from '../modules/aiExtractions/aiExtractions.router'
 import { workflowRunsRouter } from '../modules/workflowRuns/workflowRuns.router'
+import { crmWritebackRouter } from '../modules/crmWriteback/crmWriteback.router'
+import { documentsRouter } from '../modules/documents/documents.router'
+import { groundedAnswersRouter } from '../modules/groundedAnswers/groundedAnswers.router'
 // import { dealsRouter } from '../modules/deals/deals.router'
-// import { documentsRouter } from '../modules/documents/documents.router'
 
 export const router = Router()
 
@@ -22,8 +24,10 @@ router.use('/api-keys', apiKeysRouter)
 router.use('/webhooks', webhooksRouter)
 router.use('/ai/extractions', aiExtractionsRouter)
 router.use('/workflow-runs', workflowRunsRouter)
+router.use('/crm-writeback', crmWritebackRouter)
+router.use('/documents', documentsRouter)
+router.use('/ai/grounded-answers', groundedAnswersRouter)
 // router.use('/deals', dealsRouter)
-// router.use('/documents', documentsRouter)
 
 // Placeholder until modules are built
 router.get('/', (_req, res) => {
