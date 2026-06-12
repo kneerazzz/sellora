@@ -6,6 +6,7 @@ import type {
   CreateDocumentInput,
   IngestDocumentTextInput,
   ListDocumentsQuery,
+  UploadDocumentInput,
 } from './documents.schema'
 
 const createDocument = asyncHandler(async (req: Request, res: Response) => {
@@ -35,6 +36,15 @@ const listDocuments = asyncHandler(async (req: Request, res: Response) => {
   )
 })
 
+const uploadDocument = asyncHandler(async (req: Request, res: Response) => {
+  const document = await documentsService.uploadDocument(req.body as UploadDocumentInput, {
+    organizationId: req.user.organizationId,
+    userId: req.user.id,
+  })
+
+  res.status(201).json(ApiResponse.created('Document uploaded and ingested', document))
+})
+
 const getDocumentById = asyncHandler(async (req: Request, res: Response) => {
   const document = await documentsService.getDocumentById(
     req.params.id as string,
@@ -56,6 +66,7 @@ const ingestDocumentText = asyncHandler(async (req: Request, res: Response) => {
 
 export const documentsController = {
   createDocument,
+  uploadDocument,
   listDocuments,
   getDocumentById,
   ingestDocumentText,

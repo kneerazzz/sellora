@@ -1,4 +1,8 @@
 import { Prisma } from '@prisma/client'
+import { randomUUID } from 'node:crypto'
+import { mkdir, writeFile } from 'node:fs/promises'
+import path from 'node:path'
+import { env } from '../../config/env'
 import { prisma } from '../../config/prisma'
 import { ApiError } from '../../utils/apiError'
 import type { PaginatedResult } from '../../types/pagination.types'
@@ -6,6 +10,7 @@ import type {
   CreateDocumentInput,
   IngestDocumentTextInput,
   ListDocumentsQuery,
+  UploadDocumentInput,
 } from './documents.schema'
 
 const documentSelect = {
@@ -54,6 +59,55 @@ function estimateTokens(text: string): number {
   return Math.max(1, Math.ceil(text.length / 4))
 }
 
+function sanitizeFilename(filename: string): string {
+  return path.basename(filename).replace(/[^a-zA-Z0-9._-]/g, '_')
+}
+
+function inferFileType(filename: string, mimeType?: string) {
+  const extension = path.extname(filename).toLowerCase()
+
+  if (mimeType === 'text/markdown' || ['.md', '.markdown'].includes(extension)) return 'MARKDOWN' as const
+  if (mimeType === 'text/plain' || extension === '.txt') return 'TXT' as const
+  if (mimeType === 'application/pdf' || extension === '.pdf') return 'PDF' as const
+  if (
+    mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+    extension === '.docx'
+  ) {
+    return 'DOCX' as const
+  }
+
+  return null
+}
+
+function inferMimeType(fileType: NonNullable<ReturnType<typeof inferFileType>>) {
+  switch (fileType) {
+    case 'MARKDOWN':
+      return 'text/markdown'
+    case 'TXT':
+      return 'text/plain'
+    case 'PDF':
+      return 'application/pdf'
+    case 'DOCX':
+      return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  }
+}
+
+async function storeUploadedFile(input: UploadDocumentInput, organizationId: string) {
+  const safeFilename = sanitizeFilename(input.filename)
+  const storageKey = `${organizationId}/${randomUUID()}-${safeFilename}`
+  const storagePath = path.join(env.DOCUMENT_STORAGE_DIR, storageKey)
+  const fileBuffer = Buffer.from(input.content, input.encoding ?? 'utf8')
+
+  await mkdir(path.dirname(storagePath), { recursive: true })
+  await writeFile(storagePath, fileBuffer)
+
+  return {
+    storagePath,
+    sizeBytes: fileBuffer.byteLength,
+    text: fileBuffer.toString('utf8'),
+  }
+}
+
 async function createDocument(
   input: CreateDocumentInput,
   context: { organizationId: string; userId: string }
@@ -72,6 +126,72 @@ async function createDocument(
       uploadedById: context.userId,
     },
     select: documentSelect,
+  })
+}
+
+async function uploadDocument(
+  input: UploadDocumentInput,
+  context: { organizationId: string; userId: string }
+): Promise<DocumentPayload> {
+  const inferredFileType = input.fileType ?? inferFileType(input.filename, input.mimeType)
+
+  if (!inferredFileType) {
+    throw ApiError.badRequest('Unsupported document type')
+  }
+
+  if (!['TXT', 'MARKDOWN'].includes(inferredFileType)) {
+    throw ApiError.badRequest('Upload ingestion currently supports TXT and Markdown files')
+  }
+
+  const stored = await storeUploadedFile(input, context.organizationId)
+  const chunks = chunkText(stored.text)
+
+  if (chunks.length === 0) {
+    throw ApiError.badRequest('Uploaded document did not contain ingestible text')
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const document = await tx.document.create({
+      data: {
+        filename: input.filename,
+        displayName: input.displayName ?? input.filename,
+        description: input.description,
+        mimeType: input.mimeType ?? inferMimeType(inferredFileType),
+        sizeBytes: stored.sizeBytes,
+        fileType: inferredFileType,
+        storagePath: stored.storagePath,
+        status: 'PROCESSING',
+        tags: input.tags ?? [],
+        organizationId: context.organizationId,
+        uploadedById: context.userId,
+      },
+      select: { id: true },
+    })
+
+    const pineconeIds = chunks.map((_, index) => `local:${document.id}:${index}`)
+
+    await tx.documentChunk.createMany({
+      data: chunks.map((text, index) => ({
+        documentId: document.id,
+        chunkIndex: index,
+        text,
+        tokenCount: estimateTokens(text),
+        pineconeId: pineconeIds[index],
+      })),
+    })
+
+    return tx.document.update({
+      where: { id: document.id },
+      data: {
+        status: 'COMPLETED',
+        totalChunks: chunks.length,
+        embeddingModel: 'local-placeholder',
+        ingestedAt: new Date(),
+        pineconeIds,
+        errorMessage: null,
+      },
+      select: documentSelect,
+    })
   })
 }
 
@@ -193,6 +313,7 @@ async function ingestDocumentText(
 
 export const documentsService = {
   createDocument,
+  uploadDocument,
   listDocuments,
   getDocumentById,
   ingestDocumentText,

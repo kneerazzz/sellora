@@ -7,6 +7,7 @@ import {
   documentIdParamSchema,
   ingestDocumentTextSchema,
   listDocumentsSchema,
+  uploadDocumentSchema,
 } from './documents.schema'
 
 export const documentsRouter = Router()
@@ -20,6 +21,13 @@ documentsRouter.post(
   authorize('ADMIN', 'MANAGER'),
   validate(createDocumentSchema),
   documentsController.createDocument
+)
+
+documentsRouter.post(
+  '/upload',
+  authorize('ADMIN', 'MANAGER'),
+  validate(uploadDocumentSchema),
+  documentsController.uploadDocument
 )
 
 documentsRouter.get(

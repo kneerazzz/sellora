@@ -11,6 +11,7 @@ const envSchema = z.object({
   JWT_ACCESS_EXPIRES_IN: z.string().default('15m'),
   JWT_REFRESH_EXPIRES_IN: z.string().default('7d'),
   CLIENT_URL: z.string().default('http://localhost:3000'),
+  DOCUMENT_STORAGE_DIR: z.string().default('uploads/documents'),
   AI_PROVIDER: z.enum(['openai', 'groq']).default('groq'),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_EXTRACTION_MODEL: z.string().optional(),

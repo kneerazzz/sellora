@@ -14,6 +14,19 @@ export const createDocumentSchema = z.object({
   }),
 })
 
+export const uploadDocumentSchema = z.object({
+  body: z.object({
+    filename: z.string().min(1).max(255).trim(),
+    displayName: z.string().min(1).max(255).trim().optional(),
+    description: z.string().max(2000).trim().optional(),
+    mimeType: z.string().min(1).max(150).trim().optional(),
+    fileType: z.nativeEnum(DocumentType).optional(),
+    content: z.string().min(1),
+    encoding: z.enum(['utf8', 'base64']).default('utf8').optional(),
+    tags: z.array(z.string().trim().min(1).max(50)).default([]).optional(),
+  }),
+})
+
 export const listDocumentsSchema = z.object({
   query: z.object({
     page: z.coerce.number().int().min(1).default(1).optional(),
@@ -41,5 +54,6 @@ export const ingestDocumentTextSchema = z.object({
 })
 
 export type CreateDocumentInput = z.infer<typeof createDocumentSchema>['body']
+export type UploadDocumentInput = z.infer<typeof uploadDocumentSchema>['body']
 export type ListDocumentsQuery = z.infer<typeof listDocumentsSchema>['query']
 export type IngestDocumentTextInput = z.infer<typeof ingestDocumentTextSchema>['body']

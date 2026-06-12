@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { createDocumentSchema, ingestDocumentTextSchema } from './documents.schema'
+import {
+  createDocumentSchema,
+  ingestDocumentTextSchema,
+  uploadDocumentSchema,
+} from './documents.schema'
 
 describe('documents schemas', () => {
   it('accepts document metadata for an uploaded text file', () => {
@@ -29,5 +33,18 @@ describe('documents schemas', () => {
     })
 
     assert.equal(parsed.body.embeddingModel, 'local-placeholder')
+  })
+
+  it('accepts uploaded markdown content', () => {
+    const parsed = uploadDocumentSchema.parse({
+      body: {
+        filename: 'security.md',
+        content: '# Security\n\nSAML SSO is supported.',
+        tags: ['security'],
+      },
+    })
+
+    assert.equal(parsed.body.encoding, 'utf8')
+    assert.equal(parsed.body.filename, 'security.md')
   })
 })
