@@ -3,6 +3,7 @@ import { describe, it } from 'node:test'
 import {
   createDocumentSchema,
   ingestDocumentTextSchema,
+  multipartDocumentFieldsSchema,
   uploadDocumentSchema,
 } from './documents.schema'
 
@@ -46,5 +47,18 @@ describe('documents schemas', () => {
 
     assert.equal(parsed.body.encoding, 'utf8')
     assert.equal(parsed.body.filename, 'security.md')
+  })
+
+  it('accepts multipart document metadata fields', () => {
+    const parsed = multipartDocumentFieldsSchema.parse({
+      body: {
+        displayName: 'Security Overview',
+        description: 'Approved security content',
+        tags: 'security,compliance',
+      },
+    })
+
+    assert.equal(parsed.body.displayName, 'Security Overview')
+    assert.equal(parsed.body.tags, 'security,compliance')
   })
 })

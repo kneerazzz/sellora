@@ -27,6 +27,19 @@ export const uploadDocumentSchema = z.object({
   }),
 })
 
+export const multipartDocumentFieldsSchema = z.object({
+  body: z.object({
+    displayName: z.string().min(1).max(255).trim().optional(),
+    description: z.string().max(2000).trim().optional(),
+    tags: z
+      .union([
+        z.string().trim(),
+        z.array(z.string().trim().min(1).max(50)),
+      ])
+      .optional(),
+  }),
+})
+
 export const listDocumentsSchema = z.object({
   query: z.object({
     page: z.coerce.number().int().min(1).default(1).optional(),
@@ -55,5 +68,6 @@ export const ingestDocumentTextSchema = z.object({
 
 export type CreateDocumentInput = z.infer<typeof createDocumentSchema>['body']
 export type UploadDocumentInput = z.infer<typeof uploadDocumentSchema>['body']
+export type MultipartDocumentFieldsInput = z.infer<typeof multipartDocumentFieldsSchema>['body']
 export type ListDocumentsQuery = z.infer<typeof listDocumentsSchema>['query']
 export type IngestDocumentTextInput = z.infer<typeof ingestDocumentTextSchema>['body']

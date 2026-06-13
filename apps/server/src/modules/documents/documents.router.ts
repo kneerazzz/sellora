@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { authenticate, authorize } from '../../middleware/auth.middleware'
+import { documentUpload } from '../../middleware/upload.middleware'
 import { validate } from '../../middleware/validate.middleware'
 import { documentsController } from './documents.controller'
 import {
@@ -7,6 +8,7 @@ import {
   documentIdParamSchema,
   ingestDocumentTextSchema,
   listDocumentsSchema,
+  multipartDocumentFieldsSchema,
   uploadDocumentSchema,
 } from './documents.schema'
 
@@ -28,6 +30,14 @@ documentsRouter.post(
   authorize('ADMIN', 'MANAGER'),
   validate(uploadDocumentSchema),
   documentsController.uploadDocument
+)
+
+documentsRouter.post(
+  '/upload-file',
+  authorize('ADMIN', 'MANAGER'),
+  documentUpload.single('file'),
+  validate(multipartDocumentFieldsSchema),
+  documentsController.uploadMultipartDocument
 )
 
 documentsRouter.get(

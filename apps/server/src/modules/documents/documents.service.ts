@@ -6,8 +6,10 @@ import {
   buildLocalVectorIds,
   chunkText,
   estimateTokens,
+  extractDocumentText,
   inferDocumentType,
   inferMimeType,
+  storeUploadBuffer,
   storeTextUpload,
 } from '../../utils/documentProcessing'
 import { buildPaginatedResult, getPaginationParams } from '../../utils/pagination'
@@ -16,6 +18,7 @@ import type {
   CreateDocumentInput,
   IngestDocumentTextInput,
   ListDocumentsQuery,
+  MultipartDocumentFieldsInput,
   UploadDocumentInput,
 } from './documents.schema'
 
@@ -42,6 +45,98 @@ const documentSelect = {
 } satisfies Prisma.DocumentSelect
 
 export type DocumentPayload = Prisma.DocumentGetPayload<{ select: typeof documentSelect }>
+
+type IngestStoredDocumentParams = {
+  filename: string
+  displayName: string
+  description?: string
+  mimeType: string
+  sizeBytes: number
+  fileType: NonNullable<ReturnType<typeof inferDocumentType>>
+  storagePath: string
+  text: string
+  pageCount?: number
+  tags?: string[]
+  context: { organizationId: string; userId: string }
+}
+
+function normalizeMultipartTags(tags: MultipartDocumentFieldsInput['tags']): string[] {
+  if (!tags) return []
+  if (Array.isArray(tags)) return tags
+
+  const trimmed = tags.trim()
+  if (!trimmed) return []
+
+  try {
+    const parsed = JSON.parse(trimmed)
+    if (Array.isArray(parsed)) {
+      return parsed
+        .filter((tag): tag is string => typeof tag === 'string')
+        .map((tag) => tag.trim())
+        .filter(Boolean)
+    }
+  } catch {
+    // Fall back to comma-separated tags.
+  }
+
+  return trimmed
+    .split(',')
+    .map((tag) => tag.trim())
+    .filter(Boolean)
+}
+
+async function createIngestedDocument(params: IngestStoredDocumentParams): Promise<DocumentPayload> {
+  const chunks = chunkText(params.text)
+
+  if (chunks.length === 0) {
+    throw ApiError.badRequest('Uploaded document did not contain ingestible text')
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const document = await tx.document.create({
+      data: {
+        filename: params.filename,
+        displayName: params.displayName,
+        description: params.description,
+        mimeType: params.mimeType,
+        sizeBytes: params.sizeBytes,
+        fileType: params.fileType,
+        storagePath: params.storagePath,
+        status: 'PROCESSING',
+        pageCount: params.pageCount,
+        tags: params.tags ?? [],
+        organizationId: params.context.organizationId,
+        uploadedById: params.context.userId,
+      },
+      select: { id: true },
+    })
+
+    const pineconeIds = buildLocalVectorIds(document.id, chunks.length)
+
+    await tx.documentChunk.createMany({
+      data: chunks.map((text, index) => ({
+        documentId: document.id,
+        chunkIndex: index,
+        text,
+        tokenCount: estimateTokens(text),
+        pineconeId: pineconeIds[index],
+      })),
+    })
+
+    return tx.document.update({
+      where: { id: document.id },
+      data: {
+        status: 'COMPLETED',
+        totalChunks: chunks.length,
+        embeddingModel: 'local-placeholder',
+        ingestedAt: new Date(),
+        pineconeIds,
+        errorMessage: null,
+      },
+      select: documentSelect,
+    })
+  })
+}
 
 async function createDocument(
   input: CreateDocumentInput,
@@ -83,54 +178,58 @@ async function uploadDocument(
     organizationId: context.organizationId,
     storageRoot: env.DOCUMENT_STORAGE_DIR,
   })
-  const chunks = chunkText(stored.text)
+  return createIngestedDocument({
+    filename: input.filename,
+    displayName: input.displayName ?? input.filename,
+    description: input.description,
+    mimeType: input.mimeType ?? inferMimeType(inferredFileType),
+    sizeBytes: stored.sizeBytes,
+    fileType: inferredFileType,
+    storagePath: stored.storagePath,
+    text: stored.text,
+    tags: input.tags ?? [],
+    context,
+  })
+}
 
-  if (chunks.length === 0) {
-    throw ApiError.badRequest('Uploaded document did not contain ingestible text')
+async function uploadMultipartDocument(
+  file: Express.Multer.File | undefined,
+  fields: MultipartDocumentFieldsInput,
+  context: { organizationId: string; userId: string }
+): Promise<DocumentPayload> {
+  if (!file) {
+    throw ApiError.badRequest('Document file is required')
   }
 
-  return prisma.$transaction(async (tx) => {
-    const document = await tx.document.create({
-      data: {
-        filename: input.filename,
-        displayName: input.displayName ?? input.filename,
-        description: input.description,
-        mimeType: input.mimeType ?? inferMimeType(inferredFileType),
-        sizeBytes: stored.sizeBytes,
-        fileType: inferredFileType,
-        storagePath: stored.storagePath,
-        status: 'PROCESSING',
-        tags: input.tags ?? [],
-        organizationId: context.organizationId,
-        uploadedById: context.userId,
-      },
-      select: { id: true },
-    })
+  const inferredFileType = inferDocumentType(file.originalname, file.mimetype)
 
-    const pineconeIds = buildLocalVectorIds(document.id, chunks.length)
+  if (!inferredFileType) {
+    throw ApiError.badRequest('Unsupported document type')
+  }
 
-    await tx.documentChunk.createMany({
-      data: chunks.map((text, index) => ({
-        documentId: document.id,
-        chunkIndex: index,
-        text,
-        tokenCount: estimateTokens(text),
-        pineconeId: pineconeIds[index],
-      })),
-    })
+  const stored = await storeUploadBuffer({
+    filename: file.originalname,
+    buffer: file.buffer,
+    organizationId: context.organizationId,
+    storageRoot: env.DOCUMENT_STORAGE_DIR,
+  })
+  const extracted = await extractDocumentText({
+    fileType: inferredFileType,
+    buffer: stored.buffer,
+  })
 
-    return tx.document.update({
-      where: { id: document.id },
-      data: {
-        status: 'COMPLETED',
-        totalChunks: chunks.length,
-        embeddingModel: 'local-placeholder',
-        ingestedAt: new Date(),
-        pineconeIds,
-        errorMessage: null,
-      },
-      select: documentSelect,
-    })
+  return createIngestedDocument({
+    filename: file.originalname,
+    displayName: fields.displayName ?? file.originalname,
+    description: fields.description,
+    mimeType: file.mimetype || inferMimeType(inferredFileType),
+    sizeBytes: stored.sizeBytes,
+    fileType: inferredFileType,
+    storagePath: stored.storagePath,
+    text: extracted.text,
+    pageCount: extracted.pageCount,
+    tags: normalizeMultipartTags(fields.tags),
+    context,
   })
 }
 
@@ -241,6 +340,7 @@ async function ingestDocumentText(
 export const documentsService = {
   createDocument,
   uploadDocument,
+  uploadMultipartDocument,
   listDocuments,
   getDocumentById,
   ingestDocumentText,

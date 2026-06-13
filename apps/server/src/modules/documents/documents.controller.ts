@@ -6,6 +6,7 @@ import type {
   CreateDocumentInput,
   IngestDocumentTextInput,
   ListDocumentsQuery,
+  MultipartDocumentFieldsInput,
   UploadDocumentInput,
 } from './documents.schema'
 
@@ -45,6 +46,19 @@ const uploadDocument = asyncHandler(async (req: Request, res: Response) => {
   res.status(201).json(ApiResponse.created('Document uploaded and ingested', document))
 })
 
+const uploadMultipartDocument = asyncHandler(async (req: Request, res: Response) => {
+  const document = await documentsService.uploadMultipartDocument(
+    req.file,
+    req.body as MultipartDocumentFieldsInput,
+    {
+      organizationId: req.user.organizationId,
+      userId: req.user.id,
+    }
+  )
+
+  res.status(201).json(ApiResponse.created('Document uploaded and ingested', document))
+})
+
 const getDocumentById = asyncHandler(async (req: Request, res: Response) => {
   const document = await documentsService.getDocumentById(
     req.params.id as string,
@@ -67,6 +81,7 @@ const ingestDocumentText = asyncHandler(async (req: Request, res: Response) => {
 export const documentsController = {
   createDocument,
   uploadDocument,
+  uploadMultipartDocument,
   listDocuments,
   getDocumentById,
   ingestDocumentText,
