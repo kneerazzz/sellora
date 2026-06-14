@@ -47,7 +47,7 @@ async function extractSalesEvent(
       userPrompt: result.userPrompt,
       response: result.rawResponse,
       retrievedChunkIds: [],
-      pineconeQueryVector: [],
+      queryVector: [],
       leadId: validatedInput.leadId,
       dealId: validatedInput.dealId,
       userId: context.userId,
