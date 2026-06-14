@@ -10,11 +10,13 @@
 // =============================================================================
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider = "postgresql"
+  provider   = "postgresql"
+  extensions = [vector]
 }
 
 // =============================================================================
@@ -282,9 +284,6 @@ model Organization {
   maxDocuments Int @default(20)
   maxLeads     Int @default(500)
 
-  // Pinecone namespace = org.id (all vectors isolated per org)
-  pineconeNamespace String? // set on first document upload
-
   // Relations
   users            User[]
   invites          Invite[]
@@ -395,7 +394,7 @@ model Invite {
 
 // =============================================================================
 // DOCUMENT
-// Knowledge base artifact. Text is extracted, chunked, and embedded into Pinecone.
+// Knowledge base artifact. Text is extracted, chunked, and embedded via pgvector.
 // The actual file lives on disk (or S3); only metadata is stored here.
 // =============================================================================
 
@@ -419,9 +418,6 @@ model Document {
   totalChunks     Int?           // populated after chunking
   embeddingModel  String?        // e.g. "text-embedding-3-small"
   ingestedAt      DateTime?      // timestamp when COMPLETED
-
-  // Pinecone references
-  pineconeIds     String[]       // vector IDs in Pinecone for this doc
 
   // BullMQ job tracking
   jobId           String?        // BullMQ job ID for status polling
@@ -448,25 +444,29 @@ model Document {
 // =============================================================================
 // DOCUMENT CHUNK
 // One row per text chunk extracted from a Document.
-// Stores the raw text for citation display; vector lives in Pinecone.
+// Stores the raw text for citation display; embedding stored via pgvector.
 // =============================================================================
 
 model DocumentChunk {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
 
-  chunkIndex   Int     // 0-based order within the document
-  text         String  // raw chunk text (used for citation snippets)
-  tokenCount   Int     // approximate token count of this chunk
-  pageNumber   Int?    // source page (if extractable)
-  pineconeId   String  // the vector ID in Pinecone for this chunk
+  chunkIndex    Int      // 0-based order within the document
+  text          String   // raw chunk text (used for citation snippets)
+  tokenCount    Int      // approximate token count of this chunk
+  pageNumber    Int?     // source page (if extractable)
+  overlapTokens Int      @default(0) // tokens of overlap from previous chunk
+  headingPath   String[] // hierarchical heading context e.g. ["Security", "SSO"]
+  sectionTitle  String?  // nearest section heading
+
+  // pgvector embedding — managed via raw SQL, invisible to Prisma Client
+  embedding     Unsupported("vector(384)")?
 
   documentId String
   document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
   @@unique([documentId, chunkIndex])
   @@index([documentId])
-  @@index([pineconeId])
   @@map("document_chunks")
 }
 
@@ -705,7 +705,7 @@ model AiInteraction {
 
   // RAG context — which chunks were used to ground this response
   retrievedChunkIds String[]       // DocumentChunk IDs used as context
-  pineconeQueryVector Float[]      // the embedding vector used for retrieval
+  queryVector       Float[]        // the embedding vector used for retrieval
 
   // Optional links (nullable — a chat message may not be linked to a lead)
   leadId String?
