@@ -3,7 +3,6 @@ import { env } from '../../config/env'
 import { prisma } from '../../config/prisma'
 import { ApiError } from '../../utils/apiError'
 import {
-  buildLocalVectorIds,
   chunkText,
   estimateTokens,
   extractDocumentText,
@@ -11,7 +10,10 @@ import {
   inferMimeType,
   storeUploadBuffer,
   storeTextUpload,
-} from '../../utils/documentProcessing'
+} from '../../services/document/documentProcessing.service'
+import { structureAwareChunk } from '../../services/document/chunking.service'
+import { getEmbeddings } from '../../utils/embeddings'
+import { upsertChunkEmbeddings, hasEmbeddingsConfigured } from '../../utils/vectorSearch'
 import { buildPaginatedResult, getPaginationParams } from '../../utils/pagination'
 import type { PaginatedResult } from '../../types/pagination.types'
 import type {
@@ -85,57 +87,112 @@ function normalizeMultipartTags(tags: MultipartDocumentFieldsInput['tags']): str
     .filter(Boolean)
 }
 
-async function createIngestedDocument(params: IngestStoredDocumentParams): Promise<DocumentPayload> {
-  const chunks = chunkText(params.text)
+async function ingestChunks(params: {
+  documentId: string
+  organizationId: string
+  text: string
+  pageCount?: number
+  isReingest?: boolean
+}) {
+  const { documentId, text, isReingest } = params
 
+  const chunks = await structureAwareChunk(text, { maxTokens: 500, overlapTokens: 100 })
   if (chunks.length === 0) {
-    throw ApiError.badRequest('Uploaded document did not contain ingestible text')
+    throw ApiError.badRequest('Document text did not contain ingestible content')
   }
 
-  return prisma.$transaction(async (tx) => {
-    const document = await tx.document.create({
-      data: {
-        filename: params.filename,
-        displayName: params.displayName,
-        description: params.description,
-        mimeType: params.mimeType,
-        sizeBytes: params.sizeBytes,
-        fileType: params.fileType,
-        storagePath: params.storagePath,
-        status: 'PROCESSING',
-        pageCount: params.pageCount,
-        tags: params.tags ?? [],
-        organizationId: params.context.organizationId,
-        uploadedById: params.context.userId,
-      },
-      select: { id: true },
-    })
+  const useEmbeddings = hasEmbeddingsConfigured()
+  let embeddings: number[][] = []
 
-    const pineconeIds = buildLocalVectorIds(document.id, chunks.length)
+  if (useEmbeddings) {
+    embeddings = await getEmbeddings(chunks.map((c) => c.text))
+  }
+
+  const document = await prisma.$transaction(async (tx) => {
+    if (isReingest) {
+      await tx.documentChunk.deleteMany({ where: { documentId } })
+    }
 
     await tx.documentChunk.createMany({
-      data: chunks.map((text, index) => ({
-        documentId: document.id,
-        chunkIndex: index,
-        text,
-        tokenCount: estimateTokens(text),
-        pineconeId: pineconeIds[index],
+      data: chunks.map((c) => ({
+        documentId,
+        chunkIndex: c.chunkIndex,
+        text: c.text,
+        tokenCount: c.tokenCount,
+        overlapTokens: c.overlapTokens,
+        headingPath: c.headingPath,
+        sectionTitle: c.sectionTitle,
       })),
     })
 
     return tx.document.update({
-      where: { id: document.id },
+      where: { id: documentId },
       data: {
         status: 'COMPLETED',
         totalChunks: chunks.length,
-        embeddingModel: 'local-placeholder',
+        embeddingModel: useEmbeddings ? (env.EMBEDDING_PROVIDER === 'openai' ? env.OPENAI_EMBEDDING_MODEL : 'all-minilm') : 'local-placeholder',
         ingestedAt: new Date(),
-        pineconeIds,
         errorMessage: null,
+        ...(params.pageCount !== undefined ? { pageCount: params.pageCount } : {}),
       },
       select: documentSelect,
     })
   })
+
+  if (useEmbeddings && embeddings.length > 0) {
+    const createdChunks = await prisma.documentChunk.findMany({
+      where: { documentId },
+      select: { id: true },
+      orderBy: { chunkIndex: 'asc' },
+    })
+
+    const chunksWithEmbeddings = createdChunks.map((chunk, index) => ({
+      id: chunk.id,
+      embedding: embeddings[index]!,
+    }))
+
+    await upsertChunkEmbeddings(chunksWithEmbeddings)
+  }
+
+  return document
+}
+
+async function createIngestedDocument(params: IngestStoredDocumentParams): Promise<DocumentPayload> {
+  const document = await prisma.document.create({
+    data: {
+      filename: params.filename,
+      displayName: params.displayName,
+      description: params.description,
+      mimeType: params.mimeType,
+      sizeBytes: params.sizeBytes,
+      fileType: params.fileType,
+      storagePath: params.storagePath,
+      status: 'PROCESSING',
+      pageCount: params.pageCount,
+      tags: params.tags ?? [],
+      organizationId: params.context.organizationId,
+      uploadedById: params.context.userId,
+    },
+    select: { id: true },
+  })
+
+  try {
+    return await ingestChunks({
+      documentId: document.id,
+      organizationId: params.context.organizationId,
+      text: params.text,
+      pageCount: params.pageCount,
+    })
+  } catch (error: any) {
+    await prisma.document.update({
+      where: { id: document.id },
+      data: {
+        status: 'FAILED',
+        errorMessage: error.message || String(error),
+      },
+    })
+    throw error
+  }
 }
 
 async function createDocument(
@@ -291,50 +348,32 @@ async function ingestDocumentText(
     throw ApiError.notFound('Document not found')
   }
 
-  const chunks = chunkText(input.text)
-  if (chunks.length === 0) {
-    throw ApiError.badRequest('Document text did not contain ingestible content')
-  }
-
-  return prisma.$transaction(async (tx) => {
-    await tx.document.update({
-      where: { id: documentId },
-      data: {
-        status: 'PROCESSING',
-        errorMessage: null,
-      },
-    })
-
-    await tx.documentChunk.deleteMany({
-      where: { documentId },
-    })
-
-    const pineconeIds = buildLocalVectorIds(documentId, chunks.length)
-
-    await tx.documentChunk.createMany({
-      data: chunks.map((text, index) => ({
-        documentId,
-        chunkIndex: index,
-        text,
-        tokenCount: estimateTokens(text),
-        pineconeId: pineconeIds[index],
-      })),
-    })
-
-    return tx.document.update({
-      where: { id: documentId },
-      data: {
-        status: 'COMPLETED',
-        pageCount: input.pageCount,
-        totalChunks: chunks.length,
-        embeddingModel: input.embeddingModel ?? 'local-placeholder',
-        ingestedAt: new Date(),
-        pineconeIds,
-        errorMessage: null,
-      },
-      select: documentSelect,
-    })
+  await prisma.document.update({
+    where: { id: documentId },
+    data: {
+      status: 'PROCESSING',
+      errorMessage: null,
+    },
   })
+
+  try {
+    return await ingestChunks({
+      documentId,
+      organizationId,
+      text: input.text,
+      pageCount: input.pageCount,
+      isReingest: true,
+    })
+  } catch (error: any) {
+    await prisma.document.update({
+      where: { id: documentId },
+      data: {
+        status: 'FAILED',
+        errorMessage: error.message || String(error),
+      },
+    })
+    throw error
+  }
 }
 
 export const documentsService = {

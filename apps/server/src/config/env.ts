@@ -12,13 +12,15 @@ const envSchema = z.object({
   JWT_REFRESH_EXPIRES_IN: z.string().default('7d'),
   CLIENT_URL: z.string().default('http://localhost:3000'),
   DOCUMENT_STORAGE_DIR: z.string().default('uploads/documents'),
+  DOCUMENT_UPLOAD_MAX_BYTES: z.coerce.number().int().positive().default(25 * 1024 * 1024),
   AI_PROVIDER: z.enum(['openai', 'groq']).default('groq'),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_EXTRACTION_MODEL: z.string().optional(),
   GROQ_API_KEY: z.string().optional(),
   GROQ_EXTRACTION_MODEL: z.string().optional(),
-  PINECONE_API_KEY: z.string().optional(),
-  PINECONE_INDEX_NAME: z.string().optional(),
+  OPENAI_EMBEDDING_MODEL: z.string().default('text-embedding-3-small'),
+  EMBEDDING_PROVIDER: z.enum(['local', 'openai']).default('local'),
+  LOCAL_EMBEDDING_SERVICE_URL: z.string().default('http://127.0.0.1:11435'),
 })
 
 const parsed = envSchema.safeParse(process.env)

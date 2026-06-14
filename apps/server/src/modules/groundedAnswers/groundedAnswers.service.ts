@@ -6,12 +6,136 @@ import {
   tokenizeForRetrieval,
 } from '../../utils/localRetrieval'
 import type { GroundedAnswerInput } from './groundedAnswers.schema'
+import { getEmbeddings } from '../../utils/embeddings'
+import { hasEmbeddingsConfigured, searchSimilarChunks, VectorSearchResult } from '../../utils/vectorSearch'
+import { rerank } from '../../utils/reranker'
+import { callLlm } from '../../utils/llm'
 
-async function answerQuestion(input: GroundedAnswerInput, context: {
-  organizationId: string
-  userId?: string
-}) {
+async function answerQuestion(
+  input: GroundedAnswerInput,
+  context: {
+    organizationId: string
+    userId?: string
+  }
+) {
   const maxCitations = input.maxCitations ?? 5
+
+  if (hasEmbeddingsConfigured()) {
+    try {
+      const queryEmbeddings = await getEmbeddings([input.question])
+      const queryVector = queryEmbeddings[0]
+
+      if (!queryVector) {
+        throw new Error('Failed to generate query embedding vector')
+      }
+
+      const matches = await searchSimilarChunks({
+        organizationId: context.organizationId,
+        queryVector,
+        topK: maxCitations * 2,
+        documentIds: input.documentIds,
+        minScore: 0.3,
+      })
+
+      if (matches.length === 0) {
+        return await handleRefusal(input.question, queryVector, context)
+      }
+
+      const rankedResults = rerank<VectorSearchResult>({
+        items: matches.map((m) => ({ item: m, score: m.score })),
+        question: input.question,
+        getText: (m) => m.text,
+        limit: maxCitations,
+        vectorWeight: 0.7,
+      })
+
+      const topChunks = rankedResults.map((r) => r.item)
+
+      if (topChunks.length === 0) {
+        return await handleRefusal(input.question, queryVector, context)
+      }
+
+      const systemPrompt = [
+        "You are Sellora, an AI technical sales assistant. Answer the user's question ONLY using the provided company document chunks.",
+        'If the documents do not contain enough evidence or if the evidence is weak, you MUST refuse to answer and state exactly: "I do not have enough grounded document context to answer this question."',
+        'Do not make up facts, guess, or extrapolate beyond the provided text.',
+        'Always quote or refer to the provided document sources in your answer.',
+      ].join('\n')
+
+      const userPrompt = [
+        `Question: ${input.question}`,
+        '',
+        'Context document chunks:',
+        topChunks
+          .map(
+            (chunk, index) =>
+              `[Source ${index + 1}] Document: ${chunk.displayName} (Page: ${
+                chunk.pageNumber ?? 'N/A'
+              })\nContent: ${chunk.text}`
+          )
+          .join('\n\n'),
+      ].join('\n')
+
+      const llmResult = await callLlm({
+        systemPrompt,
+        userPrompt,
+        temperature: 0,
+      })
+
+      const isRefused = llmResult.text.includes(
+        'I do not have enough grounded document context to answer this question.'
+      )
+
+      if (isRefused) {
+        return await handleRefusal(input.question, queryVector, context)
+      }
+
+      const citations = topChunks.map((chunk) => ({
+        documentId: chunk.documentId,
+        documentName: chunk.displayName,
+        filename: chunk.filename,
+        chunkId: chunk.chunkId,
+        chunkIndex: chunk.chunkIndex,
+        pageNumber: chunk.pageNumber,
+        score: rankedResults.find((r) => r.item.chunkId === chunk.chunkId)?.combinedScore ?? chunk.score,
+        snippet: buildSnippet(chunk.text),
+      }))
+
+      const topScore = rankedResults[0]?.combinedScore ?? 0
+      const confidence =
+        topScore >= 0.75 ? ('HIGH' as const) : topScore >= 0.6 ? ('MEDIUM' as const) : ('LOW' as const)
+
+      const aiInteraction = await prisma.aiInteraction.create({
+        data: {
+          type: 'CHAT_MESSAGE',
+          model: llmResult.model,
+          promptTokens: llmResult.promptTokens,
+          completionTokens: llmResult.completionTokens,
+          totalTokens: llmResult.promptTokens + llmResult.completionTokens,
+          latencyMs: llmResult.latencyMs,
+          userPrompt: input.question,
+          response: llmResult.text,
+          retrievedChunkIds: citations.map((c) => c.chunkId),
+          queryVector: queryVector,
+          userId: context.userId,
+          organizationId: context.organizationId,
+        },
+        select: { id: true },
+      })
+
+      return {
+        answer: llmResult.text,
+        refused: false,
+        confidence,
+        citations,
+        aiInteractionId: aiInteraction.id,
+      }
+    } catch (error) {
+      console.error('Error in pgvector-grounded QA, falling back to local...', error)
+    }
+  }
+
+  // Fallback to local keyword overlap
   const questionTokens = tokenizeForRetrieval(input.question)
 
   const chunks = await prisma.documentChunk.findMany({
@@ -51,35 +175,7 @@ async function answerQuestion(input: GroundedAnswerInput, context: {
     .slice(0, maxCitations)
 
   if (scored.length === 0) {
-    const response = {
-      answer: 'I do not have enough grounded document context to answer this question.',
-      refused: true,
-      confidence: 'LOW' as const,
-      citations: [],
-    }
-
-    const aiInteraction = await prisma.aiInteraction.create({
-      data: {
-        type: 'CHAT_MESSAGE',
-        model: 'local-extractive-rag',
-        promptTokens: questionTokens.length,
-        completionTokens: response.answer.length,
-        totalTokens: questionTokens.length + response.answer.length,
-        latencyMs: 0,
-        userPrompt: input.question,
-        response: response.answer,
-        retrievedChunkIds: [],
-        pineconeQueryVector: [],
-        userId: context.userId,
-        organizationId: context.organizationId,
-      },
-      select: { id: true },
-    })
-
-    return {
-      ...response,
-      aiInteractionId: aiInteraction.id,
-    }
+    return await handleRefusal(input.question, [], context)
   }
 
   const citations = scored.map(({ chunk, score }) => ({
@@ -109,7 +205,7 @@ async function answerQuestion(input: GroundedAnswerInput, context: {
       userPrompt: input.question,
       response: answer,
       retrievedChunkIds: citations.map((citation) => citation.chunkId),
-      pineconeQueryVector: [],
+      queryVector: [],
       userId: context.userId,
       organizationId: context.organizationId,
     },
@@ -119,8 +215,41 @@ async function answerQuestion(input: GroundedAnswerInput, context: {
   return {
     answer,
     refused: false,
-    confidence: scored[0]?.score && scored[0].score >= 3 ? 'MEDIUM' as const : 'LOW' as const,
+    confidence: scored[0]?.score && scored[0].score >= 3 ? ('MEDIUM' as const) : ('LOW' as const),
     citations,
+    aiInteractionId: aiInteraction.id,
+  }
+}
+
+async function handleRefusal(
+  question: string,
+  queryVector: number[],
+  context: { organizationId: string; userId?: string }
+) {
+  const answer = 'I do not have enough grounded document context to answer this question.'
+  const aiInteraction = await prisma.aiInteraction.create({
+    data: {
+      type: 'CHAT_MESSAGE',
+      model: hasEmbeddingsConfigured() ? 'text-embedding-3-small' : 'local-extractive-rag',
+      promptTokens: 0,
+      completionTokens: answer.length,
+      totalTokens: answer.length,
+      latencyMs: 0,
+      userPrompt: question,
+      response: answer,
+      retrievedChunkIds: [],
+      queryVector: queryVector,
+      userId: context.userId,
+      organizationId: context.organizationId,
+    },
+    select: { id: true },
+  })
+
+  return {
+    answer,
+    refused: true,
+    confidence: 'LOW' as const,
+    citations: [],
     aiInteractionId: aiInteraction.id,
   }
 }
