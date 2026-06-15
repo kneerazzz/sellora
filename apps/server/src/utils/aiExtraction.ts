@@ -327,3 +327,171 @@ export function normalizeWebhookPayloadForExtraction(params: {
     dealId: typeof payload.dealId === 'string' ? payload.dealId : undefined,
   }
 }
+
+import {
+  rfpExtractionOutputSchema,
+  type RfpExtractionInput,
+  type RfpExtractionOutput,
+} from '../modules/aiExtractions/rfpExtraction.schema'
+
+export const rfpExtractionSystemPrompt = [
+  'You are an AI assistant for B2B technical sales teams.',
+  'Your task is to extract every single question or requirement from the provided RFP or security questionnaire text.',
+  'Return a flat array of questions.',
+  'The response must be valid JSON matching the provided schema.',
+].join('\n')
+
+const rfpExtractionJsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    questions: { type: 'array', items: { type: 'string' } },
+  },
+  required: ['questions'],
+}
+
+function parseRfpJsonOutput(rawResponse: string): RfpExtractionOutput {
+  const trimmed = rawResponse.trim()
+  const withoutFence = trimmed
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim()
+
+  return rfpExtractionOutputSchema.parse(JSON.parse(withoutFence))
+}
+
+async function callOpenAiForRfpExtraction(
+  input: RfpExtractionInput
+): Promise<{
+  output: RfpExtractionOutput
+  model: string
+  usage: { promptTokens: number; completionTokens: number; totalTokens: number }
+  latencyMs: number
+}> {
+  const { apiKey, model } = getOpenAiConfig()
+  const userPrompt = input.content
+  const startedAt = Date.now()
+
+  const response = await fetch(OPENAI_RESPONSES_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model,
+      input: [
+        { role: 'system', content: rfpExtractionSystemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      text: {
+        format: {
+          type: 'json_schema',
+          name: 'rfp_extraction',
+          strict: true,
+          schema: rfpExtractionJsonSchema,
+        },
+      },
+    }),
+  })
+
+  const data = await response.json().catch(() => null)
+  const latencyMs = Date.now() - startedAt
+
+  if (!response.ok) {
+    const message = data?.error?.message ?? 'OpenAI RFP extraction request failed'
+    throw ApiError.internal(message)
+  }
+
+  const rawResponse = extractOutputText(data)
+  if (!rawResponse) {
+    throw ApiError.internal('OpenAI response did not include output text')
+  }
+
+  const output = parseRfpJsonOutput(rawResponse)
+  const usage = data?.usage ?? {}
+
+  return {
+    output,
+    model,
+    usage: {
+      promptTokens: usage.input_tokens ?? 0,
+      completionTokens: usage.output_tokens ?? 0,
+      totalTokens: usage.total_tokens ?? 0,
+    },
+    latencyMs,
+  }
+}
+
+async function callGroqForRfpExtraction(
+  input: RfpExtractionInput
+): Promise<{
+  output: RfpExtractionOutput
+  model: string
+  usage: { promptTokens: number; completionTokens: number; totalTokens: number }
+  latencyMs: number
+}> {
+  const { apiKey, model } = getGroqConfig()
+  const userPrompt = input.content
+  const startedAt = Date.now()
+
+  const response = await fetch(GROQ_CHAT_COMPLETIONS_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        {
+          role: 'system',
+          content: [
+            rfpExtractionSystemPrompt,
+            'Return only a JSON object. Do not wrap the JSON in Markdown.',
+            `The JSON object must match this schema: ${JSON.stringify(rfpExtractionJsonSchema)}`,
+          ].join('\n'),
+        },
+        { role: 'user', content: userPrompt },
+      ],
+      temperature: 0,
+      response_format: { type: 'json_object' },
+    }),
+  })
+
+  const data = await response.json().catch(() => null)
+  const latencyMs = Date.now() - startedAt
+
+  if (!response.ok) {
+    const message = data?.error?.message ?? 'Groq RFP extraction request failed'
+    throw ApiError.internal(message)
+  }
+
+  const rawResponse = extractChatCompletionContent(data)
+  if (!rawResponse) {
+    throw ApiError.internal('Groq response did not include message content')
+  }
+
+  const output = parseRfpJsonOutput(rawResponse)
+  const usage = data?.usage ?? {}
+
+  return {
+    output,
+    model,
+    usage: {
+      promptTokens: usage.prompt_tokens ?? 0,
+      completionTokens: usage.completion_tokens ?? 0,
+      totalTokens: usage.total_tokens ?? 0,
+    },
+    latencyMs,
+  }
+}
+
+export async function callLlmForRfpExtraction(
+  input: RfpExtractionInput
+): ReturnType<typeof callOpenAiForRfpExtraction> {
+  const provider = getAiProvider()
+  return provider === 'openai'
+    ? callOpenAiForRfpExtraction(input)
+    : callGroqForRfpExtraction(input)
+}

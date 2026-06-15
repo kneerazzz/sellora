@@ -45,7 +45,7 @@ export async function searchSimilarChunks(params: {
 }): Promise<VectorSearchResult[]> {
   const { organizationId, queryVector } = params
   const topK = params.topK ?? 20
-  const minScore = params.minScore ?? 0.3
+  const minScore = params.minScore ?? 0.15
 
   const vectorStr = `[${queryVector.join(',')}]`
 
@@ -93,5 +93,5 @@ export async function searchSimilarChunks(params: {
 }
 
 export function hasEmbeddingsConfigured(): boolean {
-  return !!env.OPENAI_API_KEY
+  return env.EMBEDDING_PROVIDER === 'local' || !!env.OPENAI_API_KEY
 }
