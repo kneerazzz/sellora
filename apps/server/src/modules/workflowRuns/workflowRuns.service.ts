@@ -237,12 +237,40 @@ async function processWorkflowRun(params: {
       userId: params.userId,
     })
 
+    const buyerQuestions = result.extraction.buyerQuestions ?? []
+    const groundedAnswers = []
+    
+    if (buyerQuestions.length > 0) {
+      for (const question of buyerQuestions) {
+        try {
+          const answerResult = await groundedAnswersService.answerQuestion(
+            { question },
+            {
+              organizationId: params.organizationId,
+              userId: params.userId,
+            }
+          )
+          groundedAnswers.push({
+            question,
+            answer: answerResult.answer,
+            refused: answerResult.refused,
+            confidence: answerResult.confidence,
+            citations: answerResult.citations,
+          })
+        } catch (error) {
+          console.error(`Failed to get grounded answer for question: ${question}`, error)
+        }
+      }
+    }
+
+    const finalOutput = { ...result, groundedAnswers }
+
     const updated = await prisma.workflowRun.update({
       where: { id: workflowRun.id },
       data: {
         status: 'COMPLETED',
         confidence: result.extraction.confidence,
-        output: result as unknown as Prisma.InputJsonValue,
+        output: finalOutput as unknown as Prisma.InputJsonValue,
         completedAt: new Date(),
         errorMessage: null,
       },

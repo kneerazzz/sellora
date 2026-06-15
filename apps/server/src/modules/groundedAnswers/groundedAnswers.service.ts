@@ -10,6 +10,7 @@ import { getEmbeddings } from '../../utils/embeddings'
 import { hasEmbeddingsConfigured, searchSimilarChunks, VectorSearchResult } from '../../utils/vectorSearch'
 import { rerank } from '../../utils/reranker'
 import { callLlm } from '../../utils/llm'
+import { env } from '../../config/env'
 
 async function answerQuestion(
   input: GroundedAnswerInput,
@@ -34,7 +35,7 @@ async function answerQuestion(
         queryVector,
         topK: maxCitations * 2,
         documentIds: input.documentIds,
-        minScore: 0.3,
+        minScore: 0.15,
       })
 
       if (matches.length === 0) {
@@ -230,7 +231,11 @@ async function handleRefusal(
   const aiInteraction = await prisma.aiInteraction.create({
     data: {
       type: 'CHAT_MESSAGE',
-      model: hasEmbeddingsConfigured() ? 'text-embedding-3-small' : 'local-extractive-rag',
+      model: hasEmbeddingsConfigured()
+        ? env.EMBEDDING_PROVIDER === 'openai'
+          ? env.OPENAI_EMBEDDING_MODEL
+          : 'all-minilm'
+        : 'local-extractive-rag',
       promptTokens: 0,
       completionTokens: answer.length,
       totalTokens: answer.length,
