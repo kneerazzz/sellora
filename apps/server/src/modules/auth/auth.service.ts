@@ -11,17 +11,18 @@ import type {
   AuthUser,
   SessionInfo,
 } from '../../types/auth.types'
+import { JWT_ACCESS_SECRET, JWT_ACCESS_EXPIRES_IN, JWT_REFRESH_EXPIRES_IN } from '@/config/env'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const BCRYPT_ROUNDS = 12
-const ACCESS_TOKEN_EXPIRES = process.env.JWT_ACCESS_EXPIRES_IN ?? '15m'
-const REFRESH_TOKEN_EXPIRES_MS = 7 * 24 * 60 * 60 * 1000 // 7 days in ms
+const ACCESS_TOKEN_EXPIRES = JWT_ACCESS_EXPIRES_IN ?? '15m'
+const REFRESH_TOKEN_EXPIRES_MS = JWT_REFRESH_EXPIRES_IN ?? "7d" // 7 days in ms
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function generateAccessToken(payload: JwtAccessPayload): string {
-  return jwt.sign(payload, process.env.JWT_ACCESS_SECRET as string, {
+  return jwt.sign(payload, JWT_ACCESS_SECRET as string, {
     expiresIn: ACCESS_TOKEN_EXPIRES,
   } as jwt.SignOptions)
 }

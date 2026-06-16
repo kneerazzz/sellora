@@ -5,6 +5,7 @@ import { prisma } from '../config/prisma'
 import { sha256Hex } from '../utils/crypto'
 import type { JwtAccessPayload } from '../types/auth.types'
 import { ApiKeyScope, UserRole } from '@prisma/client'
+import { JWT_ACCESS_SECRET } from '@/config/env'
 
 function extractBearerToken(req: Request): string {
   const authHeader = req.headers.authorization
@@ -39,7 +40,7 @@ export async function authenticate(
     try {
       payload = jwt.verify(
         token,
-        process.env.JWT_ACCESS_SECRET as string
+        JWT_ACCESS_SECRET as string
       ) as JwtAccessPayload
     } catch (err) {
       if (err instanceof jwt.TokenExpiredError) {
