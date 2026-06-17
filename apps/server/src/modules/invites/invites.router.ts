@@ -1,13 +1,15 @@
 import { Router } from "express";
 import { invitesController } from "./invites.controller";
 import { inviteIdParamSchema, inviteTokenParamSchema, listInvitesSchema, createInviteSchema } from "./invites.schema";
-import { validate } from "@/middleware/validate.middleware";
-import { authenticate } from "@/middleware/auth.middleware";
+import { validate } from "../../middleware/validate.middleware";
+import { authenticate, authorize } from "../../middleware/auth.middleware";
+
 export const invitesRouter = Router()
 
 invitesRouter.post(
   '/',
   authenticate,
+  authorize('ADMIN', 'MANAGER'),
   validate(createInviteSchema),
   invitesController.createInvite
 )
@@ -15,6 +17,7 @@ invitesRouter.post(
 invitesRouter.get(
   '/',
   authenticate,
+  authorize('ADMIN', 'MANAGER'),
   validate(listInvitesSchema),
   invitesController.listInvites
 )
@@ -28,6 +31,7 @@ invitesRouter.get(
 invitesRouter.delete(
   '/:id',
   authenticate,
+  authorize('ADMIN', 'MANAGER'),
   validate(inviteIdParamSchema),
   invitesController.revokeInvite
 ) 
@@ -35,8 +39,7 @@ invitesRouter.delete(
 invitesRouter.post(
   '/:id/resend',
   authenticate,
+  authorize('ADMIN', 'MANAGER'),
   validate(inviteIdParamSchema),
   invitesController.resendInvite
 )
-
-

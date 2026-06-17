@@ -5,7 +5,7 @@ import { randomHex } from '../../utils/crypto'
 import { buildPaginatedResult, getPaginationParams } from '../../utils/pagination'
 import type { CreateInviteInput, ListInvitesQuery } from './invites.schema'
 import type { PaginatedResult } from '../../types/pagination.types'
-
+import { env } from '@/config/env'
 // ── Invite expires in 48 hours ────────────────────────────────────────────────
 
 const INVITE_EXPIRES_MS = 48 * 60 * 60 * 1000
@@ -102,7 +102,7 @@ async function createInvite(
   })
 
   // Build the invite URL the frontend will use
-  const clientUrl = process.env.CLIENT_URL ?? 'http://localhost:3000'
+  const clientUrl = env.CLIENT_URL ?? 'http://localhost:3000'
   const inviteUrl = `${clientUrl}/accept-invite?token=${rawToken}`
 
   // TODO: send email with inviteUrl when email service is set up
@@ -270,7 +270,7 @@ async function resendInvite(
     }),
   ])
 
-  const clientUrl = process.env.CLIENT_URL ?? 'http://localhost:3000'
+  const clientUrl = env.CLIENT_URL ?? 'http://localhost:3000'
   const inviteUrl = `${clientUrl}/accept-invite?token=${rawToken}`
 
   // TODO: send email

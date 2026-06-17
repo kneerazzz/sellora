@@ -20,13 +20,13 @@ workflowRunsRouter.get(
 
 workflowRunsRouter.post(
   '/process-next',
-  authorize('ADMIN', 'MANAGER'),
+  authorize('ADMIN', 'MANAGER', 'REP'),
   workflowRunsController.processNextQueuedWorkflowRun
 )
 
 workflowRunsRouter.post(
   '/process-queued',
-  authorize('ADMIN', 'MANAGER'),
+  authorize('ADMIN', 'MANAGER', 'REP'),
   validate(processQueuedWorkflowRunsSchema),
   workflowRunsController.processQueuedWorkflowRuns
 )
@@ -39,7 +39,7 @@ workflowRunsRouter.get(
 
 workflowRunsRouter.post(
   '/:id/process',
-  authorize('ADMIN', 'MANAGER'),
+  authorize('ADMIN', 'MANAGER', 'REP'),
   validate(workflowRunIdParamSchema),
   workflowRunsController.processWorkflowRun
 )
