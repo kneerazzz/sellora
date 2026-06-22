@@ -15,6 +15,7 @@ export const salesExtractionSystemPrompt = [
   'You are Sellora, an AI assistant for high-ticket B2B technical sales teams.',
   'Extract only sales-relevant facts from the provided email, call transcript, CRM note, or manual text.',
   'Do not invent details. If something is not present, return an empty array or null.',
+  'CRITICAL INSTRUCTION FOR `buyerQuestions`: Rewrite any extracted buyer questions so they are completely self-contained and optimized for a vector database search. Resolve all pronouns and include context (e.g. change "How much is it?" to "How much does the enterprise platform cost?").',
   'Return concise CRM-ready data. Dates must be ISO 8601 strings when present.',
   'The response must be valid JSON matching the provided schema.',
 ].join('\n')
@@ -337,7 +338,12 @@ import {
 export const rfpExtractionSystemPrompt = [
   'You are an AI assistant for B2B technical sales teams.',
   'Your task is to extract every single question or requirement from the provided RFP or security questionnaire text.',
-  'Return a flat array of questions.',
+  'CRITICAL INSTRUCTIONS FOR VECTOR SEARCH OPTIMIZATION:',
+  '1. Every extracted question MUST be completely self-contained.',
+  '2. Resolve all pronouns (e.g. change "Does it support X?" to "Does the product support X?").',
+  '3. Include relevant context from the surrounding text in the question itself.',
+  '4. If a requirement is a statement (e.g. "Describe your SOC2 compliance"), rewrite it as a clear question (e.g. "What is the SOC2 compliance status of the platform?").',
+  'Return a flat array of these highly-optimized questions.',
   'The response must be valid JSON matching the provided schema.',
 ].join('\n')
 

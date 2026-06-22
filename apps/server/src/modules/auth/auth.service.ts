@@ -17,7 +17,22 @@ import { env } from '@/config/env'
 
 const BCRYPT_ROUNDS = 12
 const ACCESS_TOKEN_EXPIRES = env.JWT_ACCESS_EXPIRES_IN ?? '15m'
-const REFRESH_TOKEN_EXPIRES_MS = env.JWT_REFRESH_EXPIRES_IN ?? "7d" // 7 days in ms
+
+function parseExpiresInToMs(expiresIn: string): number {
+  const match = expiresIn.match(/^(\d+)([dhms])$/)
+  if (!match) return 7 * 24 * 60 * 60 * 1000 // default 7 days
+  const val = parseInt(match[1], 10)
+  const unit = match[2]
+  switch (unit) {
+    case 'd': return val * 24 * 60 * 60 * 1000
+    case 'h': return val * 60 * 60 * 1000
+    case 'm': return val * 60 * 1000
+    case 's': return val * 1000
+    default: return 7 * 24 * 60 * 60 * 1000
+  }
+}
+
+const REFRESH_TOKEN_EXPIRES_MS = parseExpiresInToMs(env.JWT_REFRESH_EXPIRES_IN ?? '7d')
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
