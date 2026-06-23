@@ -10,7 +10,7 @@ crmWritebackRouter.use(authenticate)
 
 crmWritebackRouter.post(
   '/preview',
-  authorize('ADMIN', 'MANAGER'),
+  authorize('ADMIN', 'MANAGER', 'REP'),
   validate(crmWritebackPreviewSchema),
   crmWritebackController.previewCrmWriteback
 )
