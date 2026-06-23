@@ -12,8 +12,15 @@ import type { CreateInviteInput, ListInvitesQuery } from './invites.schema'
  * In development it is returned in the response for easy testing.
  */
 const createInvite = asyncHandler(async (req: Request, res: Response) => {
+  const input = req.body as CreateInviteInput
+
+  // Security: Managers can only invite Members. Only Admins can invite Managers/Admins.
+  if (req.user.role === 'MANAGER' && input.role !== 'REP') {
+    throw ApiError.forbidden('Managers are only allowed to invite new Members.')
+  }
+
   const { invite, inviteUrl } = await invitesService.createInvite(
-    req.body as CreateInviteInput,
+    input,
     req.user.organizationId
   )
 

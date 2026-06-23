@@ -1,8 +1,26 @@
 import { Request, Response } from "express"
 import { userService } from "./users.service"
-import { ChangePasswordInput, UpdateProfileInput } from "./users.schema"
+import { ChangePasswordInput, ListUsersQuery, UpdateProfileInput } from "./users.schema"
 import { asyncHandler } from "@/utils/asyncHandler"
 import { ApiResponse } from "@/utils/apiResponse"
+
+const listUsers = asyncHandler(async (req: Request, res: Response) => {
+  const result = await userService.listUsers(
+    req.query as ListUsersQuery,
+    req.user.organizationId
+  )
+
+  res.status(200).json(
+    ApiResponse.ok('Team members fetched', result.items, {
+      page: result.page,
+      limit: result.limit,
+      total: result.total,
+      totalPages: result.totalPages,
+      hasNextPage: result.hasNextPage,
+      hasPrevPage: result.hasPrevPage,
+    })
+  )
+})
 
 const getMe = asyncHandler(async (req: Request, res: Response) => {
   const user = await userService.getMe(req.user.id)
@@ -23,7 +41,8 @@ const updateProfile = asyncHandler(async (req: Request, res: Response) => {
 })
 
 export const userController = {
+  listUsers,
   getMe,
   changePassword,
-  updateProfile
+  updateProfile,
 }
