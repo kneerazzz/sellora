@@ -8,8 +8,8 @@ export const salesExtractionBodySchema = z.object({
   subject: z.string().trim().max(300).optional(),
   participants: z.array(z.string().trim().min(1)).max(50).default([]).optional(),
   crmContext: z.record(z.string(), z.unknown()).optional(),
-  leadId: z.string().cuid('Invalid lead ID').optional(),
-  dealId: z.string().cuid('Invalid deal ID').optional(),
+  leadId: z.string().cuid('Invalid lead ID').optional().or(z.literal('')).transform(val => val === '' ? undefined : val),
+  dealId: z.string().cuid('Invalid deal ID').optional().or(z.literal('')).transform(val => val === '' ? undefined : val),
 })
 
 export const salesExtractionInputSchema = z.object({
