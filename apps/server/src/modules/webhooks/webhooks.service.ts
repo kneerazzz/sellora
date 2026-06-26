@@ -1,4 +1,5 @@
 import {
+  Prisma,
   WebhookEventType,
   WorkflowRunType,
   type ExternalObjectType,
@@ -26,13 +27,52 @@ function workflowTypeForEvent(eventType: WebhookEventType): WorkflowRunType {
   }
 }
 
+async function findIdempotentWebhookEvent(
+  organizationId: string,
+  idempotencyKey: string
+) {
+  const existing = await prisma.webhookEvent.findFirst({
+    where: { organizationId, idempotencyKey },
+    select: {
+      id: true,
+      source: true,
+      eventType: true,
+      status: true,
+      externalObjectType: true,
+      externalObjectId: true,
+      receivedAt: true,
+      organizationId: true,
+      workflowRuns: {
+        select: {
+          id: true,
+          type: true,
+          status: true,
+          createdAt: true,
+          organizationId: true,
+          webhookEventId: true,
+        },
+        orderBy: { createdAt: 'asc' },
+        take: 1,
+      },
+    },
+  })
+
+  if (!existing?.workflowRuns[0]) {
+    return null
+  }
+
+  const { workflowRuns, ...webhookEvent } = existing
+  return { webhookEvent, workflowRun: workflowRuns[0] }
+}
+
 async function intakeWebhookEvent(params: {
   input: WebhookEventInput
   eventType: WebhookEventType
   organizationId: string
   apiKeyId: string
+  idempotencyKey?: string
 }) {
-  const { input, eventType, organizationId, apiKeyId } = params
+  const { input, eventType, organizationId, apiKeyId, idempotencyKey } = params
 
   if (input.integrationId) {
     const integration = await prisma.integration.findFirst({
@@ -45,50 +85,69 @@ async function intakeWebhookEvent(params: {
     }
   }
 
-  return prisma.$transaction(async (tx) => {
-    const webhookEvent = await tx.webhookEvent.create({
-      data: {
-        source: input.source as WebhookEventSource,
-        eventType,
-        externalObjectType: input.externalObjectType as ExternalObjectType | undefined,
-        externalObjectId: input.externalObjectId,
-        payload: input.payload as object,
-        organizationId,
-        apiKeyId,
-        integrationId: input.integrationId,
-      },
-      select: {
-        id: true,
-        source: true,
-        eventType: true,
-        status: true,
-        externalObjectType: true,
-        externalObjectId: true,
-        receivedAt: true,
-        organizationId: true,
-      },
-    })
+  if (idempotencyKey) {
+    const existing = await findIdempotentWebhookEvent(organizationId, idempotencyKey)
+    if (existing) return existing
+  }
 
-    const workflowRun = await tx.workflowRun.create({
-      data: {
-        type: workflowTypeForEvent(eventType),
-        status: 'QUEUED',
-        input: input.payload as object,
-        organizationId,
-        webhookEventId: webhookEvent.id,
-      },
-      select: {
-        id: true,
-        type: true,
-        status: true,
-        createdAt: true,
-        organizationId: true,
-        webhookEventId: true,
-      },
-    })
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const webhookEvent = await tx.webhookEvent.create({
+        data: {
+          source: input.source as WebhookEventSource,
+          eventType,
+          externalObjectType: input.externalObjectType as ExternalObjectType | undefined,
+          externalObjectId: input.externalObjectId,
+          payload: input.payload as object,
+          organizationId,
+          apiKeyId,
+          integrationId: input.integrationId,
+          idempotencyKey,
+        },
+        select: {
+          id: true,
+          source: true,
+          eventType: true,
+          status: true,
+          externalObjectType: true,
+          externalObjectId: true,
+          receivedAt: true,
+          organizationId: true,
+        },
+      })
 
-    return { webhookEvent, workflowRun }
-  })
+      const workflowRun = await tx.workflowRun.create({
+        data: {
+          type: workflowTypeForEvent(eventType),
+          status: 'QUEUED',
+          input: input.payload as object,
+          organizationId,
+          webhookEventId: webhookEvent.id,
+        },
+        select: {
+          id: true,
+          type: true,
+          status: true,
+          createdAt: true,
+          organizationId: true,
+          webhookEventId: true,
+        },
+      })
+
+      return { webhookEvent, workflowRun }
+    })
+  } catch (error) {
+    if (
+      idempotencyKey &&
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2002'
+    ) {
+      const existing = await findIdempotentWebhookEvent(organizationId, idempotencyKey)
+      if (existing) return existing
+    }
+
+    throw error
+  }
 }
 
 function buildWebhookAcceptedResponse(result: Awaited<ReturnType<typeof intakeWebhookEvent>>) {
