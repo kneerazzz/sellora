@@ -23,6 +23,56 @@ function extractBearerToken(req: Request): string {
   return token
 }
 
+async function verifyApiKey(rawKey: string) {
+  const keyHash = sha256Hex(rawKey)
+
+  const apiKey = await prisma.apiKey.findUnique({
+    where: { keyHash },
+    select: {
+      id: true,
+      scope: true,
+      isActive: true,
+      expiresAt: true,
+      organizationId: true,
+    },
+  })
+
+  if (!apiKey || !apiKey.isActive) {
+    throw ApiError.unauthorized('Invalid API key')
+  }
+
+  if (apiKey.expiresAt && apiKey.expiresAt < new Date()) {
+    throw ApiError.unauthorized('API key has expired')
+  }
+
+  return apiKey
+}
+
+function assertApiKeyScope(apiKeyScope: ApiKeyScope, allowedScopes: ApiKeyScope[]) {
+  const hasAllowedScope =
+    allowedScopes.length === 0 ||
+    apiKeyScope === 'FULL_ACCESS' ||
+    allowedScopes.includes(apiKeyScope)
+
+  if (!hasAllowedScope) {
+    throw ApiError.forbidden(
+      `This API key requires one of the following scopes: ${allowedScopes.join(', ')}`
+    )
+  }
+}
+
+function touchApiKey(apiKeyId: string) {
+  prisma.apiKey
+    .update({
+      where: { id: apiKeyId },
+      data: {
+        lastUsedAt: new Date(),
+        usageCount: { increment: 1 },
+      },
+    })
+    .catch(() => {})
+}
+
 /**
  * Verifies the JWT access token from the Authorization header.
  * Attaches the decoded payload to req.user.
@@ -81,37 +131,9 @@ export function authenticateApiKey(...allowedScopes: ApiKeyScope[]) {
   ): Promise<void> => {
     try {
       const rawKey = extractBearerToken(req)
-      const keyHash = sha256Hex(rawKey)
+      const apiKey = await verifyApiKey(rawKey)
 
-      const apiKey = await prisma.apiKey.findUnique({
-        where: { keyHash },
-        select: {
-          id: true,
-          scope: true,
-          isActive: true,
-          expiresAt: true,
-          organizationId: true,
-        },
-      })
-
-      if (!apiKey || !apiKey.isActive) {
-        throw ApiError.unauthorized('Invalid API key')
-      }
-
-      if (apiKey.expiresAt && apiKey.expiresAt < new Date()) {
-        throw ApiError.unauthorized('API key has expired')
-      }
-
-      const hasAllowedScope =
-        allowedScopes.length === 0 ||
-        apiKey.scope === 'FULL_ACCESS' ||
-        allowedScopes.includes(apiKey.scope)
-
-      if (!hasAllowedScope) {
-        throw ApiError.forbidden(
-          `This API key requires one of the following scopes: ${allowedScopes.join(', ')}`
-        )
-      }
+      assertApiKeyScope(apiKey.scope, allowedScopes)
 
       req.apiKey = {
         id: apiKey.id,
@@ -119,16 +141,61 @@ export function authenticateApiKey(...allowedScopes: ApiKeyScope[]) {
         organizationId: apiKey.organizationId,
       }
 
-      prisma.apiKey
-        .update({
-          where: { id: apiKey.id },
-          data: {
-            lastUsedAt: new Date(),
-            usageCount: { increment: 1 },
-          },
-        })
-        .catch(() => {})
+      touchApiKey(apiKey.id)
 
+      next()
+    } catch (err) {
+      next(err)
+    }
+  }
+}
+
+/**
+ * Allows either a browser JWT or a machine API key on routes that have the same
+ * organization boundary but different caller types.
+ */
+export function authenticateJwtOrApiKey(...allowedApiKeyScopes: ApiKeyScope[]) {
+  return async (
+    req: Request,
+    _res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      const token = extractBearerToken(req)
+
+      try {
+        const payload = jwt.verify(
+          token,
+          env.JWT_ACCESS_SECRET as string
+        ) as JwtAccessPayload
+
+        req.user = {
+          id: payload.sub,
+          email: payload.email,
+          role: payload.role,
+          organizationId: payload.organizationId,
+          firstName: '',
+          lastName: '',
+        }
+
+        next()
+        return
+      } catch (jwtErr) {
+        if (jwtErr instanceof jwt.TokenExpiredError) {
+          throw ApiError.unauthorized('Access token has expired')
+        }
+      }
+
+      const apiKey = await verifyApiKey(token)
+      assertApiKeyScope(apiKey.scope, allowedApiKeyScopes)
+
+      req.apiKey = {
+        id: apiKey.id,
+        scope: apiKey.scope,
+        organizationId: apiKey.organizationId,
+      }
+
+      touchApiKey(apiKey.id)
       next()
     } catch (err) {
       next(err)
