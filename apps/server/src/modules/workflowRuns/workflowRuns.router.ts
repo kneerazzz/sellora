@@ -1,5 +1,6 @@
 import { Router } from 'express'
-import { authenticate, authorize } from '../../middleware/auth.middleware'
+import { authenticate, authenticateJwtOrApiKey, authorize } from '../../middleware/auth.middleware'
+import { apiKeyRateLimit } from '../../middleware/apiKeyRateLimit.middleware'
 import { validate } from '../../middleware/validate.middleware'
 import { workflowRunsController } from './workflowRuns.controller'
 import {
@@ -10,22 +11,24 @@ import {
 
 export const workflowRunsRouter = Router()
 
-workflowRunsRouter.use(authenticate)
-
 workflowRunsRouter.get(
   '/',
+  authenticateJwtOrApiKey('WEBHOOK_ONLY', 'FULL_ACCESS'),
+  apiKeyRateLimit(),
   validate(listWorkflowRunsSchema),
   workflowRunsController.listWorkflowRuns
 )
 
 workflowRunsRouter.post(
   '/process-next',
+  authenticate,
   authorize('ADMIN', 'MANAGER', 'REP'),
   workflowRunsController.processNextQueuedWorkflowRun
 )
 
 workflowRunsRouter.post(
   '/process-queued',
+  authenticate,
   authorize('ADMIN', 'MANAGER', 'REP'),
   validate(processQueuedWorkflowRunsSchema),
   workflowRunsController.processQueuedWorkflowRuns
@@ -33,13 +36,16 @@ workflowRunsRouter.post(
 
 workflowRunsRouter.get(
   '/:id',
+  authenticateJwtOrApiKey('WEBHOOK_ONLY', 'FULL_ACCESS'),
+  apiKeyRateLimit(),
   validate(workflowRunIdParamSchema),
   workflowRunsController.getWorkflowRunById
 )
 
 workflowRunsRouter.post(
   '/:id/process',
-  authorize('ADMIN', 'MANAGER', 'REP'),
+  authenticateJwtOrApiKey('WEBHOOK_ONLY', 'FULL_ACCESS'),
+  apiKeyRateLimit(),
   validate(workflowRunIdParamSchema),
   workflowRunsController.processWorkflowRun
 )

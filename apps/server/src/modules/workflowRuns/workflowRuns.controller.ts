@@ -1,5 +1,7 @@
 import { Request, Response } from 'express'
+import { UserRole } from '@prisma/client'
 import { ApiResponse } from '../../utils/apiResponse'
+import { ApiError } from '../../utils/apiError'
 import { asyncHandler } from '../../utils/asyncHandler'
 import { workflowRunsService } from './workflowRuns.service'
 import type {
@@ -7,10 +9,34 @@ import type {
   ProcessQueuedWorkflowRunsInput,
 } from './workflowRuns.schema'
 
+const workflowProcessorRoles: UserRole[] = ['ADMIN', 'MANAGER', 'REP']
+
+function getRequestOrganizationId(req: Request): string {
+  const organizationId = req.user?.organizationId ?? req.apiKey?.organizationId
+
+  if (!organizationId) {
+    throw ApiError.unauthorized('Not authenticated')
+  }
+
+  return organizationId
+}
+
+function assertHumanWorkflowProcessor(req: Request) {
+  if (!req.user) {
+    return
+  }
+
+  if (!workflowProcessorRoles.includes(req.user.role)) {
+    throw ApiError.forbidden(
+      `This action requires one of the following roles: ${workflowProcessorRoles.join(', ')}`
+    )
+  }
+}
+
 const listWorkflowRuns = asyncHandler(async (req: Request, res: Response) => {
   const result = await workflowRunsService.listWorkflowRuns(
     req.query as ListWorkflowRunsQuery,
-    req.user.organizationId
+    getRequestOrganizationId(req)
   )
 
   res.status(200).json(
@@ -28,17 +54,19 @@ const listWorkflowRuns = asyncHandler(async (req: Request, res: Response) => {
 const getWorkflowRunById = asyncHandler(async (req: Request, res: Response) => {
   const workflowRun = await workflowRunsService.getWorkflowRunById(
     req.params.id as string,
-    req.user.organizationId
+    getRequestOrganizationId(req)
   )
 
   res.status(200).json(ApiResponse.ok('Workflow run fetched', workflowRun))
 })
 
 const processWorkflowRun = asyncHandler(async (req: Request, res: Response) => {
+  assertHumanWorkflowProcessor(req)
+
   const workflowRun = await workflowRunsService.processWorkflowRun({
     workflowRunId: req.params.id as string,
-    organizationId: req.user.organizationId,
-    userId: req.user.id,
+    organizationId: getRequestOrganizationId(req),
+    userId: req.user?.id,
   })
 
   res.status(200).json(ApiResponse.ok('Workflow run processed', workflowRun))
@@ -46,7 +74,7 @@ const processWorkflowRun = asyncHandler(async (req: Request, res: Response) => {
 
 const processNextQueuedWorkflowRun = asyncHandler(async (req: Request, res: Response) => {
   const workflowRun = await workflowRunsService.processNextQueuedWorkflowRun({
-    organizationId: req.user.organizationId,
+    organizationId: getRequestOrganizationId(req),
     userId: req.user.id,
   })
 
@@ -56,7 +84,7 @@ const processNextQueuedWorkflowRun = asyncHandler(async (req: Request, res: Resp
 const processQueuedWorkflowRuns = asyncHandler(async (req: Request, res: Response) => {
   const input = req.body as ProcessQueuedWorkflowRunsInput
   const workflowRuns = await workflowRunsService.processQueuedWorkflowRuns({
-    organizationId: req.user.organizationId,
+    organizationId: getRequestOrganizationId(req),
     userId: req.user.id,
     limit: input.limit,
   })

@@ -132,11 +132,11 @@ async function processWorkflowRun(params: {
   }
 
   if (workflowRun.status === 'COMPLETED') {
-    throw ApiError.badRequest('Workflow run has already been completed')
+    return getWorkflowRunById(workflowRun.id, params.organizationId)
   }
 
   if (workflowRun.status === 'RUNNING') {
-    throw ApiError.badRequest('Workflow run is already running')
+    return getWorkflowRunById(workflowRun.id, params.organizationId)
   }
 
   if (
@@ -146,14 +146,22 @@ async function processWorkflowRun(params: {
     throw ApiError.badRequest(`Workflow type ${workflowRun.type} is not supported yet`)
   }
 
-  await prisma.workflowRun.update({
-    where: { id: workflowRun.id },
+  const claimed = await prisma.workflowRun.updateMany({
+    where: {
+      id: workflowRun.id,
+      organizationId: params.organizationId,
+      status: { notIn: ['COMPLETED', 'RUNNING'] },
+    },
     data: {
       status: 'RUNNING',
       startedAt: new Date(),
       errorMessage: null,
     },
   })
+
+  if (claimed.count === 0) {
+    return getWorkflowRunById(workflowRun.id, params.organizationId)
+  }
 
   try {
     if (workflowRun.type === 'GROUNDED_TECHNICAL_ANSWER') {
