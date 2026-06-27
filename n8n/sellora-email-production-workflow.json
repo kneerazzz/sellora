@@ -1,0 +1,611 @@
+{
+  "name": "sellora-template",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -640,
+        64
+      ],
+      "id": "a326258e-75b6-464a-822c-cf42e8c58196",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "jsCode": "const COMPANY_EMAIL = \"support@sellora.com\";\nconst email  = $json;\nconst missing = []\nconst from = email.from?.value?.[0]?.address;\nconst to = email.to?.value?.[0]?.address;\nif(!email.messageId && !email.threadId) missing.push(\"messageid or threadId\");\nif(!email.from) missing.push(\"from\");\nif(!email.text && !email.subject) missing.push(\"content or subject\");\nconst recipients = [\n  ...(email.to?.value ?? []),\n  ...(email.cc?.value ?? [])\n]\nconst sentToCompany = recipients.some(\n  recipient => recipient.address?.toLowerCase() === COMPANY_EMAIL.toLowerCase()\n);\nif (!sentToCompany) {\n  missing.push(\"email not addressed to company\");\n}\n\nconst payload = {\n  \"source\": \"N8N\",\n  \"messageId\": email.messageId,\n  \"threadId\": email.threadId,\n  \"from\": from,\n  \"to\": to,\n  \"subject\": email.subject,\n  \"text\": email.text,\n  \"receivedAt\": email.date || new Date().toISOString()\n}\n\nif(missing.length > 0){\n  return [{\n    json: {\n      valid: false,\n      error: `missing required email fields: ${missing.join(', ')}`,\n      payload\n    }\n  }]\n}\n\nreturn [{\n  json: {\n    valid: true,\n    idempotencyKey: email.messageId || email.threadId,\n    externalObjectId: email.messageId || email.threadId,\n    externalObjectType: \"EMAIL\",\n    payload\n  }\n}]"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -224,
+        64
+      ],
+      "id": "62359654-cf98-4ddc-892e-340289c17b51",
+      "name": "Edit and Validate Email"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "{\n  \"subject\": \"Technical Question\",\n  \"from\": {\n    \"value\": [\n      {\n        \"address\": \"neerajt@gmail.com\",\n        \"name\": \"neeraj\"\n      }\n    ],\n    \"text\": \"neeraj <neeraj@gmail.com.com>\"\n  },\n  \"to\": {\n    \"value\": [\n      {\n        \"address\": \"support@sellora.com\",\n        \"name\": \"Support\"\n      }\n    ],\n    \"text\": \"Support <support@sellora.com>\"\n  },\n  \"cc\": {\n    \"value\": [\n      {\n        \"address\": \"kneerazzz@gmail.com\",\n        \"name\": \"kneerazzz\"\n      }\n    ],\n    \"text\": \"kneerazzz <kneerazzz@gmail.com>\"\n  },\n  \"text\": \"Hello, Does sellora have reranker system for vector search?.\",\n  \"html\": \"<p>Hello, Does sellora have reranker system for vector search?.</p>\",\n  \"date\": \"Fri, 26 Jun 2026 10:15:30 +0000\",\n  \"messageId\": \"<abc123@sellora.com>\",\n  \"threadId\": \"sellora-test\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -432,
+        64
+      ],
+      "id": "677486f0-6120-4941-bc34-4543670c07ae",
+      "name": "Testing Email"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "1332b789-3407-461f-91ea-4d3014f262e8",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        0,
+        64
+      ],
+      "id": "1903c178-4971-4b3d-8bb6-b50b7513560e",
+      "name": "Email Valid?"
+    },
+    {
+      "parameters": {
+        "jsCode": "console.error(\"Sellora workflow error: \", JSON.stringify($json, null, 2))\nreturn [{\n  json: {\n    ok: false,\n    handled: true,\n    error: $json\n  }\n}]"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        304,
+        240
+      ],
+      "id": "a1a293be-320b-4ecc-ae11-165aabc08d17",
+      "name": "Error Log"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://172.17.0.1:4000/api/v1/webhooks/email-received?process=true",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ $json.idempotencyKey }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"source\": \"{{ $json.payload.source }}\",\n  \"externalObjectId\": \"{{ $json.externalObjectId }}\",\n  \"externalObjectType\": \"{{ $json.externalObjectType}}\",\n  \"payload\": {\n    \"subject\": \"{{ $json.payload.subject }}\",\n    \"content\": \"{{ $json.payload.text }}\",\n    \"participants\": [\"{{$json.payload.from}}\", \"{{ $json.payload.to}}\"]\n  }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        192,
+        -128
+      ],
+      "id": "953d10bd-36e3-4322-935d-a61baaedbdcd",
+      "name": "Sellora Webhook Process",
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "GdR0KOZB9poCYrrG",
+          "name": "Bearer Auth account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "426cfe76-4cc6-4dbb-905a-f08969fa8f66",
+              "leftValue": "={{Boolean($json.error) || Number($json.statusCode || 0) >= 400 }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        480,
+        -128
+      ],
+      "id": "2939eec2-9065-4e0f-be43-7701604b1b4f",
+      "name": "Sellora HTTP Error"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "1ce97332-b44d-4673-a7f1-b3ee3c7870a4",
+              "leftValue": "={{ Number($json.statusCode || 0) }}",
+              "rightValue": 202,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        736,
+        -112
+      ],
+      "id": "a235f494-797f-40c2-8205-c0d1c0f4816a",
+      "name": "Still Processing"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || $json;\nconst data = body.data || body;\nconst workflowRun = data.workflowRun || data;\nconst status = workflowRun.status || data.status;\n\nreturn [{\n  json: {\n    ...$json,\n    workflowRun,\n    status,\n    result: data.result || workflowRun.output || data.output || null,\n    pollUrl: data.polllUrl || (workflowRun.id ? `workflow-runs/${workflowRun.id}` : undefined )\n  }\n}]"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1056,
+        16
+      ],
+      "id": "10a9c2ae-25f8-4260-8200-4a146ddb90a9",
+      "name": "Normalise Result"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "a63c1f5c-1722-4f0a-b9e0-be274324d706",
+              "leftValue": "={{ $json.status === \"FAILED\" || Boolean($json.error) || Number($json.statusCode || 0) >= 400 }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1296,
+        32
+      ],
+      "id": "a2ca7c36-e63c-43ad-81a3-906d31e9b6fe",
+      "name": "Failed?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "dd46d7c3-8aa3-43b6-8c46-98eabfd04a17",
+              "leftValue": "={{ $json.status === \"NEEDS_REVIEW\" || $json.result?.extraction?.confidence === \"LOW\" || $json.workflowRun?.confidence === \"LOW\" }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1520,
+        128
+      ],
+      "id": "a670cbef-dd4d-40df-86aa-8c2abece837a",
+      "name": "Needs Review?"
+    },
+    {
+      "parameters": {
+        "jsCode": "console.log(\"Sellora workflow needs human review\", JSON.stringify($json, null, 2));\nreturn [{\n  json: {\n    ok: true,\n    needsReview: true,\n    reviewPayload: $json\n  }\n}]"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1744,
+        16
+      ],
+      "id": "df494b73-e80f-4797-b42a-f8cbef24f5ee",
+      "name": "Human Review"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://172.17.0.1:4000/api/v1/crm-writeback/preview",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"workflowRunId\": \"{{ $json.workflowRun.id }}\",\n  \"provider\": \"HUBSPOT\",\n  \"externalObjectType\": \"{{ $json }} || 'LEAD' \",\n  \"externalObjectId\": \"{{ $json.workflowRun?.webhookEvent?.externalObjectId || $json.workflowRun?.webhookEventId || $json.workflowRun.Id }}\"\n}\n  ",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1760,
+        208
+      ],
+      "id": "65b1d207-956e-4252-a2d0-5c5fd97c9394",
+      "name": "CRM-Preview",
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "GdR0KOZB9poCYrrG",
+          "name": "Bearer Auth account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "console.log('Sellora workflow success', {\n  statusCode: $json.statusCode,\n  response: $json.body || $json\n});\n\nreturn [{ json: { ok: true, audit: $json } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1968,
+        208
+      ],
+      "id": "18b7f2f1-aab7-4b39-ba0c-538b40959b0c",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "url": "{{( `http://172.17.0.1:4000` ) + ($json.body?.data?.pollUrl || $json.body?.pollUrl || $json.pollUrl )}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1232,
+        -240
+      ],
+      "id": "f7604a21-40e9-4f0a-9af0-d93d64fd72ee",
+      "name": "Poll Workflow Run",
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "GdR0KOZB9poCYrrG",
+          "name": "Bearer Auth account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c96d704a-954c-4b1f-9033-cdca2dec6527",
+              "leftValue": "={{['QUEUED', 'RUNNING'].includes($json.status)}}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1456,
+        -240
+      ],
+      "id": "5529a6c3-f489-44a9-b621-8e7df5115b18",
+      "name": "Poll Again?"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1040,
+        -240
+      ],
+      "id": "47149405-9842-4886-b75f-6ffeb528f345",
+      "name": "Wait 5s",
+      "webhookId": "fdbc5bc2-485b-4670-ad43-46f96a42b8bf"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Testing Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit and Validate Email": {
+      "main": [
+        [
+          {
+            "node": "Email Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Testing Email": {
+      "main": [
+        [
+          {
+            "node": "Edit and Validate Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email Valid?": {
+      "main": [
+        [
+          {
+            "node": "Sellora Webhook Process",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sellora Webhook Process": {
+      "main": [
+        [
+          {
+            "node": "Sellora HTTP Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sellora HTTP Error": {
+      "main": [
+        [
+          {
+            "node": "Error Log",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Still Processing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Still Processing": {
+      "main": [
+        [
+          {
+            "node": "Wait 5s",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Normalise Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalise Result": {
+      "main": [
+        [
+          {
+            "node": "Failed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Failed?": {
+      "main": [
+        [
+          {
+            "node": "Error Log",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Needs Review?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs Review?": {
+      "main": [
+        [
+          {
+            "node": "Human Review",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "CRM-Preview",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CRM-Preview": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Poll Workflow Run": {
+      "main": [
+        [
+          {
+            "node": "Poll Again?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Poll Again?": {
+      "main": [
+        [
+          {
+            "node": "Wait 5s",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Normalise Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 5s": {
+      "main": [
+        [
+          {
+            "node": "Poll Workflow Run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "ce2942b2-5f48-4869-8f2c-a0791dcbc30d",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "2334b4a08093565af3e4269746e8e5f9d2a0c0549ec93e560547b5888be24bad"
+  },
+  "id": "jhliLrfBBASwtdahYSZVv",
+  "tags": []
+}
