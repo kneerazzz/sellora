@@ -1,16 +1,16 @@
 import { Router } from 'express'
-import { authenticate, authorize } from '../../middleware/auth.middleware'
+import { authenticateJwtOrApiKey } from '../../middleware/auth.middleware'
+import { apiKeyRateLimit } from '../../middleware/apiKeyRateLimit.middleware'
 import { validate } from '../../middleware/validate.middleware'
 import { crmWritebackController } from './crmWriteback.controller'
 import { crmWritebackPreviewSchema } from './crmWriteback.schema'
 
 export const crmWritebackRouter = Router()
 
-crmWritebackRouter.use(authenticate)
-
 crmWritebackRouter.post(
   '/preview',
-  authorize('ADMIN', 'MANAGER', 'REP'),
+  authenticateJwtOrApiKey('WEBHOOK_ONLY', 'FULL_ACCESS'),
+  apiKeyRateLimit(),
   validate(crmWritebackPreviewSchema),
   crmWritebackController.previewCrmWriteback
 )
