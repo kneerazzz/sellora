@@ -9,5 +9,12 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <script src="/sellora-widget.js"></script>
+    <script>
+      SelloraCopilot.init({
+        apiUrl: `%VITE_COPILOT_API_URL%`,
+        apiKey: '%VITE_API_KEY%',
+      });
+    </script>
   </body>
 </html>
