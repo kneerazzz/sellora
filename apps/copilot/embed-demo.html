@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Embed demo</title>
+  </head>
+  <body>
+    <h1>Your company website</h1>
+    <p>Paste these two lines before &lt;/body&gt;:</p>
+    <pre>&lt;script src="https://cdn.yourdomain.com/sellora-widget.js"&gt;&lt;/script&gt;
+&lt;script&gt;
+  SelloraCopilot.init({
+    apiUrl: 'https://api.yourdomain.com/api/v1',
+    apiKey: 'sk_sellora_YOUR_READ_ONLY_KEY',
+  });
+&lt;/script&gt;</pre>
+
+    <script src="./dist/sellora-widget.js"></script>
+    <script>
+      SelloraCopilot.init({
+        apiUrl: 'http://localhost:4000/api/v1',
+        apiKey: 'REPLACE_WITH_YOUR_KEY',
+      });
+    </script>
+  </body>
+</html>

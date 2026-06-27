@@ -1,0 +1,21 @@
+{
+  "name": "copilot",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "typecheck": "tsc -b --noEmit"
+  },
+  "dependencies": {
+    "marked": "^17.0.1",
+    "preact": "^10.28.2"
+  },
+  "devDependencies": {
+    "@preact/preset-vite": "^2.10.2",
+    "typescript": "~5.9.3",
+    "vite": "^7.3.0",
+    "vite-plugin-css-injected-by-js": "^3.5.2"
+  }
+}
