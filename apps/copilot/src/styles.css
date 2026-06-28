@@ -29,7 +29,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #7c3aed, #6366f1, #3b82f6);
+  background: #27272a;
   box-shadow:
     0 0 0 1px rgba(255, 255, 255, 0.08),
     0 16px 40px -8px rgba(0, 0, 0, 0.55),
@@ -55,9 +55,9 @@
   bottom: 84px;
   right: 16px;
   z-index: 2147483647;
-  width: 384px;
+  width: 440px;
   max-width: calc(100vw - 32px);
-  height: 500px;
+  height: 600px;
   max-height: calc(100vh - 120px);
   display: flex;
   flex-direction: column;
@@ -111,7 +111,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #7c3aed, #6366f1);
+  background: #27272a;
 }
 
 .sc-logo svg {
@@ -178,8 +178,8 @@
   width: 48px;
   height: 48px;
   border-radius: 14px;
-  background: rgba(139, 92, 246, 0.12);
-  border: 1px solid rgba(139, 92, 246, 0.2);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -189,7 +189,7 @@
 .sc-empty-icon svg {
   width: 24px;
   height: 24px;
-  color: #a78bfa;
+  color: #e4e4e7;
 }
 
 .sc-empty strong {
@@ -225,7 +225,7 @@
 }
 
 .sc-bubble-user {
-  background: linear-gradient(135deg, #7c3aed, #6366f1);
+  background: #27272a;
   color: #fff;
   border-bottom-right-radius: 4px;
 }
@@ -331,8 +331,8 @@
   width: 18px;
   height: 18px;
   border-radius: 6px;
-  background: rgba(139, 92, 246, 0.2);
-  color: #c4b5fd;
+  background: rgba(255, 255, 255, 0.1);
+  color: #e4e4e7;
   font-size: 10px;
   font-weight: 700;
   display: flex;
@@ -366,7 +366,7 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #a78bfa;
+  background: #e4e4e7;
   animation: sc-bounce 1.2s infinite ease-in-out;
 }
 
@@ -420,8 +420,8 @@
 }
 
 .sc-input-wrap:focus-within {
-  border-color: rgba(139, 92, 246, 0.4);
-  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.12);
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.05);
 }
 
 .sc-input {
@@ -451,7 +451,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #7c3aed, #6366f1);
+  background: #27272a;
   color: white;
   flex-shrink: 0;
   transition: filter 0.15s;
