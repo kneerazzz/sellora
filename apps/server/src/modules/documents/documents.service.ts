@@ -96,7 +96,7 @@ async function ingestChunks(params: {
 }) {
   const { documentId, text, isReingest } = params
 
-  const chunks = await structureAwareChunk(text, { maxTokens: 500, overlapTokens: 100 })
+  const chunks = await structureAwareChunk(text, { maxTokens: 1000, overlapTokens: 200 })
   if (chunks.length === 0) {
     throw ApiError.badRequest('Document text did not contain ingestible content')
   }

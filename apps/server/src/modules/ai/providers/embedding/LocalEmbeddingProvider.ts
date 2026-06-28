@@ -10,7 +10,7 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
     const url = env.LOCAL_EMBEDDING_SERVICE_URL || 'http://127.0.0.1:11435'
     // Extract host from url, since Ollama config takes host config
     this.embedModel = new OllamaEmbedding({
-      model: 'all-minilm',
+      model: 'nomic-embed-text',
       config: {
         host: url,
       },

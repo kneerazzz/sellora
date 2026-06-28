@@ -33,7 +33,7 @@ async function answerQuestion(
       const matches = await searchSimilarChunks({
         organizationId: context.organizationId,
         queryVector,
-        topK: maxCitations * 2,
+        topK: maxCitations * 5,
         documentIds: input.documentIds,
         minScore: 0.15,
       })
@@ -57,10 +57,11 @@ async function answerQuestion(
       }
 
       const systemPrompt = [
-        "You are Sellora, an AI technical sales assistant. Answer the user's question ONLY using the provided company document chunks.",
-        'If the documents do not contain enough evidence or if the evidence is weak, you MUST refuse to answer and state exactly: "I do not have enough grounded document context to answer this question."',
+        "You are Sellora, an expert AI assistant. Answer the user's question accurately using ONLY the provided company documentation.",
+        'If the documentation does not contain enough evidence, you MUST refuse to answer and state exactly: "I do not have enough grounded document context to answer this question."',
         'Do not make up facts, guess, or extrapolate beyond the provided text.',
-        'Always quote or refer to the provided document sources in your answer.',
+        'Respond naturally as a company expert. Do NOT use phrases like "Based on the provided document chunks" or "According to the provided chunks". Assume the context is your own internal knowledge.',
+        'When referencing a specific detail, you may naturally mention the document name if helpful.',
       ].join('\n')
 
       const userPrompt = [
@@ -69,10 +70,10 @@ async function answerQuestion(
         'Context document chunks:',
         topChunks
           .map(
-            (chunk, index) =>
-              `[Source ${index + 1}] Document: ${chunk.displayName} (Page: ${
-                chunk.pageNumber ?? 'N/A'
-              })\nContent: ${chunk.text}`
+            (chunk, index) => {
+              const pathStr = chunk.headingPath?.length > 0 ? chunk.headingPath.join(' > ') : 'General'
+              return `[Source ${index + 1}] Document: ${chunk.displayName} | Section: ${pathStr}\nContent: ${chunk.text}`
+            }
           )
           .join('\n\n'),
       ].join('\n')
