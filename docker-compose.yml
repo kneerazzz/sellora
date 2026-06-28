@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:15-alpine
+    image: pgvector/pgvector:pg15
     container_name: sellora_postgres
     restart: always
     environment:
@@ -33,10 +33,24 @@ services:
     networks:
       - sellora_network
 
+  ollama:
+    image: ollama/ollama
+    container_name: sellora_ollama
+    restart: always
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    ports:
+      - "${OLLAMA_PORT:-11435}:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - sellora_network
+
 networks:
   sellora_network:
     driver: bridge
 
 volumes:
   pgdata:
-    
+  ollama_data:
