@@ -217,7 +217,7 @@ async function answerQuestion(
   return {
     answer,
     refused: false,
-    confidence: scored[0]?.score && scored[0].score >= 3 ? ('MEDIUM' as const) : ('LOW' as const),
+    confidence: scored[0]?.score && scored[0].score >= 0.5 ? ('MEDIUM' as const) : ('LOW' as const),
     citations,
     aiInteractionId: aiInteraction.id,
   }
