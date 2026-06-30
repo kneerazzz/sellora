@@ -6,11 +6,14 @@ import type { SalesExtractionInput } from './aiExtractions.schema'
 import type { RfpExtractionInput } from './rfpExtraction.schema'
 
 const extractSalesEvent = asyncHandler(async (req: Request, res: Response) => {
+  const orgId = req.user?.organizationId || req.apiKey?.organizationId
+  if (!orgId) throw new Error('Organization ID is missing')
+
   const result = await aiExtractionsService.extractSalesEvent(
     req.body as SalesExtractionInput,
     {
-      organizationId: req.user.organizationId,
-      userId: req.user.id,
+      organizationId: orgId,
+      userId: req.user?.id,
     }
   )
 
@@ -18,11 +21,14 @@ const extractSalesEvent = asyncHandler(async (req: Request, res: Response) => {
 })
 
 const extractAndAnswerRfp = asyncHandler(async (req: Request, res: Response) => {
+  const orgId = req.user?.organizationId || req.apiKey?.organizationId
+  if (!orgId) throw new Error('Organization ID is missing')
+
   const result = await aiExtractionsService.extractAndAnswerRfp(
     req.body as RfpExtractionInput,
     {
-      organizationId: req.user.organizationId,
-      userId: req.user.id,
+      organizationId: orgId,
+      userId: req.user?.id,
     }
   )
 
