@@ -1,0 +1,353 @@
+{
+  "name": "Sellora – RFP Processing Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [{ "mode": "everyMinute" }]
+        },
+        "triggerOn": "specificFolder",
+        "folderToWatch": {
+          "__rl": true,
+          "value": "={{ $vars.GOOGLE_DRIVE_RFP_FOLDER_ID }}",
+          "mode": "id"
+        },
+        "event": "fileCreated",
+        "filters": {
+          "fileType": "application/pdf"
+        },
+        "options": {}
+      },
+      "id": "node_trigger_gdrive",
+      "name": "Google Drive – Watch RFP Folder",
+      "type": "n8n-nodes-base.googleDriveTrigger",
+      "typeVersion": 1,
+      "position": [0, 300],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "gdrive_cred",
+          "name": "Google Drive OAuth2"
+        }
+      },
+      "notes": "Watches a dedicated Google Drive folder. When a new PDF is dropped, this fires. Set GOOGLE_DRIVE_RFP_FOLDER_ID in n8n Variables."
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.id }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "id": "node_download_file",
+      "name": "Google Drive – Download PDF",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [220, 300],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "gdrive_cred",
+          "name": "Google Drive OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract the binary PDF data and convert to base64 text.\n// n8n stores downloaded files in $binary.data\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  // Get the original filename from the trigger\n  const fileName = item.json.name || 'rfp_document.pdf';\n  \n  // The binary data from Google Drive download\n  const binaryData = item.binary?.data;\n  \n  if (!binaryData) {\n    throw new Error('No binary data found in downloaded file');\n  }\n\n  results.push({\n    json: {\n      fileName,\n      fileId: item.json.id,\n      mimeType: binaryData.mimeType || 'application/pdf',\n      fileSize: binaryData.fileSize,\n      // Pass binary reference forward\n    },\n    binary: item.binary,\n  });\n}\n\nreturn results;"
+      },
+      "id": "node_prepare_binary",
+      "name": "Prepare File Metadata",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "binaryPropertyName": "data",
+        "options": {}
+      },
+      "id": "node_extract_pdf_text",
+      "name": "Extract PDF Text",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [660, 300],
+      "notes": "Built-in n8n node. Reads the binary PDF and outputs raw text string. Handles tables, columns, multi-page PDFs."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Clean up the raw extracted text before sending to Sellora backend.\n// Removes excessive whitespace, page headers/footers noise, etc.\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  let rawText = item.json.text || item.json.data || '';\n\n  if (!rawText || rawText.trim().length < 50) {\n    throw new Error(`PDF text extraction yielded too little content for file: ${item.json.fileName || 'unknown'}. The PDF may be scanned/image-based.`);\n  }\n\n  // Basic cleanup\n  let cleanedText = rawText\n    // Normalize line endings\n    .replace(/\\r\\n/g, '\\n')\n    // Collapse 3+ blank lines into 2\n    .replace(/\\n{3,}/g, '\\n\\n')\n    // Remove common PDF artifacts\n    .replace(/\\f/g, '\\n')\n    .trim();\n\n  results.push({\n    json: {\n      fileName: item.json.fileName,\n      fileId: item.json.fileId,\n      rfpText: cleanedText,\n      charCount: cleanedText.length,\n      estimatedPages: Math.ceil(cleanedText.length / 3000),\n    }\n  });\n}\n\nreturn results;"
+      },
+      "id": "node_clean_text",
+      "name": "Clean & Validate Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $vars.SELLORA_BASE_URL }}/api/v1/ai/extractions/rfp",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"rfpText\": {{ JSON.stringify($json.rfpText) }},\n  \"documentContext\": {\n    \"sourceFile\": {{ JSON.stringify($json.fileName) }},\n    \"charCount\": {{ $json.charCount }},\n    \"estimatedPages\": {{ $json.estimatedPages }}\n  }\n}",
+        "options": {
+          "timeout": 120000,
+          "response": {
+            "response": {
+              "fullResponse": false
+            }
+          }
+        }
+      },
+      "id": "node_call_sellora_rfp",
+      "name": "Sellora – POST /ai/extractions/rfp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1100, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "sellora_api_key_cred",
+          "name": "Sellora API Key"
+        }
+      },
+      "notes": "Calls your backend's RFP endpoint. The backend:\n1. Extracts all questions with the LLM\n2. Rewrites each as a self-contained question\n3. Searches pgvector for matching document chunks\n4. Answers each question with citations\n5. Returns structured JSON\n\nTimeout set to 120s — RFPs with 50-100 questions can take a while."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "check_success",
+              "leftValue": "={{ $json.success }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "node_check_response",
+      "name": "Check API Response",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1320, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse and reshape the Sellora RFP API response into rows for Excel.\n// Response shape (from your backend docs):\n// {\n//   success: true,\n//   data: {\n//     extractedQuestions: [...],\n//     answers: [\n//       {\n//         question: string,\n//         rewrittenQuestion: string,\n//         answer: string,\n//         confidence: 'HIGH' | 'MEDIUM' | 'LOW',\n//         refused: boolean,\n//         citations: [{ chunkId, documentId, score, text, sectionTitle }]\n//       }\n//     ],\n//     aiInteractionId: string,\n//     totalQuestions: number,\n//     answeredCount: number,\n//     refusedCount: number\n//   }\n// }\n\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const data = item.json.data || item.json;\n  const answers = data.answers || [];\n\n  if (answers.length === 0) {\n    throw new Error('Sellora returned zero answers. Check the rfpText was not empty.');\n  }\n\n  const rows = answers.map((ans, idx) => ({\n    rowNumber: idx + 1,\n    originalQuestion: ans.question || '',\n    rewrittenQuestion: ans.rewrittenQuestion || ans.question || '',\n    answer: ans.refused\n      ? 'INSUFFICIENT CONTEXT — Manual review required'\n      : (ans.answer || ''),\n    confidence: ans.refused ? 'N/A' : (ans.confidence || 'LOW'),\n    requiresReview: ans.refused ? 'YES' : 'NO',\n    topCitationSection: ans.citations?.[0]?.sectionTitle || '',\n    topCitationScore: ans.citations?.[0]?.score\n      ? (ans.citations[0].score * 100).toFixed(1) + '%'\n      : '',\n    citationCount: (ans.citations || []).length,\n  }));\n\n  results.push({\n    json: {\n      rows,\n      summary: {\n        totalQuestions: data.totalQuestions || answers.length,\n        answeredCount: data.answeredCount || answers.filter(a => !a.refused).length,\n        refusedCount: data.refusedCount || answers.filter(a => a.refused).length,\n        aiInteractionId: data.aiInteractionId || '',\n      },\n      // Pass through for email node\n      sourceFileName: $('Clean & Validate Text').first().json.fileName,\n      fileId: $('Clean & Validate Text').first().json.fileId,\n    }\n  });\n}\n\nreturn results;"
+      },
+      "id": "node_parse_answers",
+      "name": "Parse & Shape Answers",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1540, 180],
+      "notes": "Reshapes the Sellora response into flat rows suitable for writing to a spreadsheet."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Convert answer rows into a proper spreadsheet binary.\n// n8n's 'Convert to File' node or SpreadsheetFile node writes XLSX.\n\nconst item = $input.first().json;\nconst rows = item.rows || [];\nconst summary = item.summary || {};\n\n// Build CSV-style data for the Convert to File node.\n// We'll pass it as structured JSON; the next node writes it as XLSX.\n\nconst headers = [\n  '#',\n  'Original Question',\n  'Refined Question (AI)',\n  'Answer',\n  'Confidence',\n  'Requires Manual Review?',\n  'Source Section',\n  'Match Score',\n  'Citations Used',\n];\n\nconst dataRows = rows.map(r => ([\n  r.rowNumber,\n  r.originalQuestion,\n  r.rewrittenQuestion,\n  r.answer,\n  r.confidence,\n  r.requiresReview,\n  r.topCitationSection,\n  r.topCitationScore,\n  r.citationCount,\n]));\n\n// Summary rows at the bottom\nconst summaryRows = [\n  [],\n  ['SUMMARY', '', '', '', '', '', '', '', ''],\n  ['Total Questions', summary.totalQuestions, '', '', '', '', '', '', ''],\n  ['Answered', summary.answeredCount, '', '', '', '', '', '', ''],\n  ['Needs Review', summary.refusedCount, '', '', '', '', '', '', ''],\n  ['AI Interaction ID', summary.aiInteractionId, '', '', '', '', '', '', ''],\n  ['Generated by', 'Sellora AI Backend', '', '', '', '', '', '', ''],\n  ['Timestamp', new Date().toISOString(), '', '', '', '', '', '', ''],\n];\n\nreturn [{\n  json: {\n    headers,\n    dataRows,\n    summaryRows,\n    allRows: [headers, ...dataRows, ...summaryRows],\n    // Metadata for email\n    sourceFileName: item.sourceFileName,\n    summary,\n  }\n}];"
+      },
+      "id": "node_build_spreadsheet_data",
+      "name": "Build Spreadsheet Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1760, 180]
+    },
+    {
+      "parameters": {
+        "operation": "toFile",
+        "fileFormat": "xlsx",
+        "binaryPropertyName": "rfp_answers",
+        "options": {
+          "fileName": "=RFP_Answers_{{ $('Clean & Validate Text').first().json.fileName.replace('.pdf', '') }}_{{ $now.format('YYYY-MM-DD') }}.xlsx",
+          "sheetName": "RFP Answers"
+        }
+      },
+      "id": "node_write_xlsx",
+      "name": "Convert to Excel File",
+      "type": "n8n-nodes-base.spreadsheetFile",
+      "typeVersion": 2,
+      "position": [1980, 180],
+      "notes": "Writes the answer rows to an XLSX binary. Output is stored in binary property 'rfp_answers'."
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $vars.SELLORA_FROM_EMAIL }}",
+        "toEmail": "={{ $vars.ENGINEER_EMAIL }}",
+        "subject": "=✅ RFP Answers Ready – {{ $('Clean & Validate Text').first().json.fileName }}",
+        "emailType": "html",
+        "message": "=<h2>RFP Processing Complete</h2>\n\n<p>Sellora has finished processing the RFP document:</p>\n<ul>\n  <li><strong>File:</strong> {{ $('Clean & Validate Text').first().json.fileName }}</li>\n  <li><strong>Total Questions:</strong> {{ $('Parse & Shape Answers').first().json.summary.totalQuestions }}</li>\n  <li><strong>Auto-Answered:</strong> {{ $('Parse & Shape Answers').first().json.summary.answeredCount }}</li>\n  <li><strong>Needs Manual Review:</strong> {{ $('Parse & Shape Answers').first().json.summary.refusedCount }}</li>\n</ul>\n\n<p>The completed spreadsheet is attached. Questions marked <strong>\"YES\"</strong> in the <em>Requires Manual Review</em> column had insufficient context in our document library and need a human answer.</p>\n\n<p style=\"color: #666; font-size: 12px;\">Powered by Sellora AI · AI Interaction ID: {{ $('Parse & Shape Answers').first().json.summary.aiInteractionId }}</p>",
+        "attachments": "rfp_answers",
+        "options": {}
+      },
+      "id": "node_send_email_success",
+      "name": "Email – Send Answers to Engineer",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [2200, 180],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail_cred",
+          "name": "Gmail OAuth2"
+        }
+      },
+      "notes": "Sends the completed XLSX back to the engineer. Change to SMTP node if not using Gmail."
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $vars.SELLORA_FROM_EMAIL }}",
+        "toEmail": "={{ $vars.ENGINEER_EMAIL }}",
+        "subject": "=❌ RFP Processing Failed – {{ $('Clean & Validate Text').first().json.fileName }}",
+        "emailType": "html",
+        "message": "=<h2>RFP Processing Error</h2>\n\n<p>The Sellora backend returned an error while processing:</p>\n<ul>\n  <li><strong>File:</strong> {{ $('Clean & Validate Text').first().json.fileName }}</li>\n  <li><strong>Error:</strong> {{ $json.message || 'Unknown error' }}</li>\n  <li><strong>Status Code:</strong> {{ $json.statusCode || 'N/A' }}</li>\n</ul>\n\n<p>Please check the Sellora backend logs or process this file manually.</p>\n\n<p>Raw response:</p>\n<pre>{{ JSON.stringify($json, null, 2) }}</pre>",
+        "options": {}
+      },
+      "id": "node_send_email_error",
+      "name": "Email – Alert on Failure",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1540, 420],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail_cred",
+          "name": "Gmail OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "name": "=RFP_Answers_{{ $('Clean & Validate Text').first().json.fileName.replace('.pdf', '') }}_{{ $now.format('YYYY-MM-DD') }}.xlsx",
+        "driveId": {
+          "__rl": true,
+          "value": "My Drive",
+          "mode": "list"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "={{ $vars.GOOGLE_DRIVE_ANSWERS_FOLDER_ID }}",
+          "mode": "id"
+        },
+        "binaryData": true,
+        "binaryPropertyName": "rfp_answers",
+        "options": {}
+      },
+      "id": "node_upload_answers_gdrive",
+      "name": "Google Drive – Save Answers File",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [2200, 360],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "gdrive_cred",
+          "name": "Google Drive OAuth2"
+        }
+      },
+      "notes": "Saves the completed XLSX back to a separate 'Completed Answers' folder in Google Drive for archiving. Optional — remove if not needed."
+    }
+  ],
+  "connections": {
+    "Google Drive – Watch RFP Folder": {
+      "main": [[{ "node": "Google Drive – Download PDF", "type": "main", "index": 0 }]]
+    },
+    "Google Drive – Download PDF": {
+      "main": [[{ "node": "Prepare File Metadata", "type": "main", "index": 0 }]]
+    },
+    "Prepare File Metadata": {
+      "main": [[{ "node": "Extract PDF Text", "type": "main", "index": 0 }]]
+    },
+    "Extract PDF Text": {
+      "main": [[{ "node": "Clean & Validate Text", "type": "main", "index": 0 }]]
+    },
+    "Clean & Validate Text": {
+      "main": [[{ "node": "Sellora – POST /ai/extractions/rfp", "type": "main", "index": 0 }]]
+    },
+    "Sellora – POST /ai/extractions/rfp": {
+      "main": [[{ "node": "Check API Response", "type": "main", "index": 0 }]]
+    },
+    "Check API Response": {
+      "main": [
+        [{ "node": "Parse & Shape Answers", "type": "main", "index": 0 }],
+        [{ "node": "Email – Alert on Failure", "type": "main", "index": 0 }]
+      ]
+    },
+    "Parse & Shape Answers": {
+      "main": [[{ "node": "Build Spreadsheet Data", "type": "main", "index": 0 }]]
+    },
+    "Build Spreadsheet Data": {
+      "main": [[{ "node": "Convert to Excel File", "type": "main", "index": 0 }]]
+    },
+    "Convert to Excel File": {
+      "main": [[
+        { "node": "Email – Send Answers to Engineer", "type": "main", "index": 0 },
+        { "node": "Google Drive – Save Answers File", "type": "main", "index": 0 }
+      ]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "sellora-rfp-workflow-v1"
+  },
+  "pinData": {},
+  "versionId": "1.0.0",
+  "triggerCount": 1,
+  "tags": [
+    { "name": "sellora" },
+    { "name": "rfp" },
+    { "name": "ai" }
+  ],
+  "_readme": {
+    "title": "Sellora – RFP Processing Pipeline",
+    "description": "Full n8n workflow. Watches a Google Drive folder for new PDFs, extracts text, sends to Sellora's /api/v1/ai/extractions/rfp endpoint, writes answers to Excel, and emails back to the engineer.",
+    "n8n_variables_required": {
+      "GOOGLE_DRIVE_RFP_FOLDER_ID": "Google Drive folder ID where clients drop RFP PDFs",
+      "GOOGLE_DRIVE_ANSWERS_FOLDER_ID": "Google Drive folder ID for completed answer files (archive)",
+      "SELLORA_BASE_URL": "Your Sellora backend URL e.g. https://api.yourcompany.com",
+      "SELLORA_FROM_EMAIL": "Sender email address e.g. rfp@yourcompany.com",
+      "ENGINEER_EMAIL": "Recipient email address for completed RFP answers"
+    },
+    "credentials_required": [
+      "Google Drive OAuth2 (id: gdrive_cred)",
+      "Sellora API Key – HTTP Header Auth with name 'Authorization' and value 'Bearer sk_sellora_YOUR_KEY' (id: sellora_api_key_cred)",
+      "Gmail OAuth2 (id: gmail_cred) — or swap for SMTP"
+    ],
+    "how_to_import": [
+      "1. Open your n8n instance",
+      "2. Go to Workflows → New → Import from JSON",
+      "3. Paste this file",
+      "4. Set up the 3 credentials listed above",
+      "5. Set the 5 n8n Variables in Settings → Variables",
+      "6. Activate the workflow"
+    ]
+  }
+}
