@@ -31,11 +31,15 @@ export function tokenizeForRetrieval(value: string): string[] {
 }
 
 export function scoreByTokenOverlap(questionTokens: string[], text: string): number {
+  if (questionTokens.length === 0) return 0
+  
   const lowerText = text.toLowerCase()
 
-  return questionTokens.reduce((score, token) => {
+  const overlapCount = questionTokens.reduce((score, token) => {
     return lowerText.includes(token) ? score + 1 : score
   }, 0)
+  
+  return overlapCount / questionTokens.length
 }
 
 export function buildSnippet(text: string, maxLength = 450): string {

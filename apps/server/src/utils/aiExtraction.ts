@@ -343,8 +343,7 @@ export const rfpExtractionSystemPrompt = [
   '2. Resolve all pronouns (e.g. change "Does it support X?" to "Does the product support X?").',
   '3. Include relevant context from the surrounding text in the question itself.',
   '4. If a requirement is a statement (e.g. "Describe your SOC2 compliance"), rewrite it as a clear question (e.g. "What is the SOC2 compliance status of the platform?").',
-  'Return a flat array of these highly-optimized questions.',
-  'The response must be valid JSON matching the provided schema.',
+  'The response must be a valid JSON object matching the provided schema exactly. Do not return a raw array.',
 ].join('\n')
 
 const rfpExtractionJsonSchema = {
@@ -363,7 +362,29 @@ function parseRfpJsonOutput(rawResponse: string): RfpExtractionOutput {
     .replace(/\s*```$/i, '')
     .trim()
 
-  return rfpExtractionOutputSchema.parse(JSON.parse(withoutFence))
+  let parsed = JSON.parse(withoutFence)
+  
+  if (Array.isArray(parsed)) {
+    const objWithQuestions = parsed.find((item: any) => item && typeof item === 'object' && item.questions && Array.isArray(item.questions))
+    if (objWithQuestions) {
+      parsed = objWithQuestions
+    } else {
+      parsed = { questions: parsed }
+    }
+  }
+
+  if (parsed.questions && Array.isArray(parsed.questions)) {
+    console.log('DEBUG_GROQ_OUTPUT:', JSON.stringify(parsed.questions, null, 2))
+    parsed.questions = parsed.questions.flat(Infinity).map((q: any) => {
+      if (typeof q === 'string') return q
+      if (typeof q === 'object' && q !== null) {
+        return q.question || q.text || Object.values(q)[0] || String(q)
+      }
+      return String(q)
+    })
+  }
+
+  return rfpExtractionOutputSchema.parse(parsed)
 }
 
 async function callOpenAiForRfpExtraction(
