@@ -96,16 +96,26 @@ async function ingestChunks(params: {
 }) {
   const { documentId, text, isReingest } = params
 
-  const chunks = await structureAwareChunk(text, { maxTokens: 1000, overlapTokens: 200 })
+  const chunks = await structureAwareChunk(text, { maxTokens: 400, overlapTokens: 100 })
   if (chunks.length === 0) {
     throw ApiError.badRequest('Document text did not contain ingestible content')
   }
+
+  // Prepend heading path to chunk text to improve retrieval context
+  const enrichedChunks = chunks.map((c) => {
+    const headingPrefix = c.headingPath.length > 0 ? `${c.headingPath.join(' > ')}: ` : ''
+    return {
+      ...c,
+      text: `${headingPrefix}${c.text}`
+    }
+  })
 
   const useEmbeddings = hasEmbeddingsConfigured()
   let embeddings: number[][] = []
 
   if (useEmbeddings) {
-    embeddings = await getEmbeddings(chunks.map((c) => c.text))
+    // Explicitly do not pass { isQuery: true } so the default 'search_document: ' prefix is used
+    embeddings = await getEmbeddings(enrichedChunks.map((c) => c.text))
   }
 
   const document = await prisma.$transaction(async (tx) => {
@@ -114,7 +124,7 @@ async function ingestChunks(params: {
     }
 
     await tx.documentChunk.createMany({
-      data: chunks.map((c) => ({
+      data: enrichedChunks.map((c) => ({
         documentId,
         chunkIndex: c.chunkIndex,
         text: c.text,

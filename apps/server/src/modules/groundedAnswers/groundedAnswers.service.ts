@@ -23,7 +23,24 @@ async function answerQuestion(
 
   if (hasEmbeddingsConfigured()) {
     try {
-      const queryEmbeddings = await getEmbeddings([input.question])
+      // --- HyDE (Hypothetical Document Embeddings) ---
+      // Generate a hypothetical answer to improve semantic matching
+      const hydeSystemPrompt = 'You are a helpful expert. Given the user question, write a short, highly plausible 2-3 sentence hypothetical answer snippet that could exist in a company knowledge base to answer it. Do not include any introductory text.'
+      
+      let hydeText = input.question
+      try {
+        const hydeResult = await callLlm({
+          systemPrompt: hydeSystemPrompt,
+          userPrompt: input.question,
+          temperature: 0.3,
+        })
+        hydeText = hydeResult.text
+      } catch (e: any) {
+        console.warn("HyDE generation failed (quota/rate-limit), falling back to raw question:", e.message)
+      }
+      
+      // We embed the hypothetical text rather than the raw question
+      const queryEmbeddings = await getEmbeddings([hydeText], { isQuery: true })
       const queryVector = queryEmbeddings[0]
 
       if (!queryVector) {
@@ -33,7 +50,8 @@ async function answerQuestion(
       const matches = await searchSimilarChunks({
         organizationId: context.organizationId,
         queryVector,
-        topK: maxCitations * 5,
+        queryText: input.question,
+        topK: 30, // Retrieve more for cross-encoder reranking
         documentIds: input.documentIds,
         minScore: 0.15,
       })
@@ -42,12 +60,11 @@ async function answerQuestion(
         return await handleRefusal(input.question, queryVector, context)
       }
 
-      const rankedResults = rerank<VectorSearchResult>({
+      const rankedResults = await rerank<VectorSearchResult>({
         items: matches.map((m) => ({ item: m, score: m.score })),
         question: input.question,
         getText: (m) => m.text,
         limit: maxCitations,
-        vectorWeight: 0.7,
       })
 
       const topChunks = rankedResults.map((r) => r.item)
