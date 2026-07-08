@@ -17,13 +17,17 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
     })
   }
 
-  public async embed(texts: string[]): Promise<number[][]> {
+  public async embed(texts: string[], options?: { isQuery?: boolean }): Promise<number[][]> {
     if (texts.length === 0) {
       return []
     }
 
+    // Nomic requires specific prefixes for best performance
+    const prefix = options?.isQuery ? 'search_query: ' : 'search_document: '
+    const prefixedTexts = texts.map(t => prefix + t)
+
     try {
-      const embeddings = await this.embedModel.getTextEmbeddings(texts)
+      const embeddings = await this.embedModel.getTextEmbeddings(prefixedTexts)
       return embeddings
     } catch (error: any) {
       console.error('LocalEmbeddingProvider error:', error)

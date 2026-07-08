@@ -4,5 +4,5 @@ export interface EmbeddingProvider {
    * @param texts An array of strings to embed.
    * @returns A promise that resolves to an array of embedding vectors.
    */
-  embed(texts: string[]): Promise<number[][]>;
+  embed(texts: string[], options?: { isQuery?: boolean }): Promise<number[][]>;
 }

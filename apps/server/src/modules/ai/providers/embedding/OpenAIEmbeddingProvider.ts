@@ -2,7 +2,7 @@ import { EmbeddingProvider } from './EmbeddingProvider'
 import { ApiError } from '../../../../utils/apiError'
 
 export class OpenAIEmbeddingProvider implements EmbeddingProvider {
-  public async embed(texts: string[]): Promise<number[][]> {
+  public async embed(texts: string[], options?: { isQuery?: boolean }): Promise<number[][]> {
     if (texts.length === 0) {
       return []
     }
