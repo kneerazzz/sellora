@@ -17,6 +17,7 @@
   "dependencies": {
     "@llamaindex/ollama": "^0.1.23",
     "@prisma/client": "^7.8.0",
+    "@xenova/transformers": "^2.17.2",
     "bcryptjs": "^3.0.3",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
