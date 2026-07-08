@@ -1,56 +1,62 @@
-import { tokenizeForRetrieval, scoreByTokenOverlap } from './localRetrieval'
+import { AutoTokenizer, AutoModelForSequenceClassification, env } from '@xenova/transformers'
+
+env.allowLocalModels = false // Use huggingface hub
 
 export type RankedResult<T> = {
   item: T
-  vectorScore: number
-  keywordScore: number
   combinedScore: number
 }
 
-export function rerank<T>(params: {
+let tokenizerInstance: any = null
+let modelInstance: any = null
+
+async function getReranker() {
+  if (!tokenizerInstance || !modelInstance) {
+    const model_id = 'Xenova/bge-reranker-base'
+    tokenizerInstance = await AutoTokenizer.from_pretrained(model_id)
+    modelInstance = await AutoModelForSequenceClassification.from_pretrained(model_id, { quantized: true })
+  }
+  return { tokenizer: tokenizerInstance, model: modelInstance }
+}
+
+export async function rerank<T>(params: {
   items: Array<{ item: T; score: number }>
   question: string
   getText: (item: T) => string
   limit: number
-  vectorWeight?: number
-}): RankedResult<T>[] {
+}): Promise<RankedResult<T>[]> {
   const { items, question, getText, limit } = params
-  const vectorWeight = params.vectorWeight ?? 0.7
-  const keywordWeight = 1 - vectorWeight
 
   if (items.length === 0) {
     return []
   }
 
-  const questionTokens = tokenizeForRetrieval(question)
+  try {
+    const { tokenizer, model } = await getReranker()
 
-  // Compute raw keyword scores
-  const entries = items.map((entry) => ({
-    item: entry.item,
-    rawVectorScore: entry.score,
-    rawKeywordScore: scoreByTokenOverlap(questionTokens, getText(entry.item)),
-  }))
+    const rankedPromises = items.map(async (entry) => {
+      const text = getText(entry.item)
+      const inputs = tokenizer(question, { text_pair: text })
+      const { logits } = await model(inputs)
+      const score = logits.data[0]
+      return {
+        item: entry.item,
+        combinedScore: score,
+      }
+    })
 
-  // Find max scores for normalization
-  const maxVector = Math.max(...entries.map((e) => e.rawVectorScore)) || 1
-  const maxKeyword = Math.max(...entries.map((e) => e.rawKeywordScore)) || 1
+    const ranked = await Promise.all(rankedPromises)
 
-  // Normalize and compute combined score
-  const ranked: RankedResult<T>[] = entries.map((entry) => {
-    const normalizedVector = entry.rawVectorScore / maxVector
-    const normalizedKeyword = entry.rawKeywordScore / maxKeyword
-    const combinedScore = vectorWeight * normalizedVector + keywordWeight * normalizedKeyword
+    // Sort descending by combined score (cross encoder logit)
+    ranked.sort((a, b) => b.combinedScore - a.combinedScore)
 
-    return {
+    return ranked.slice(0, limit)
+  } catch (error) {
+    console.error('Cross-encoder reranking failed, falling back to original scores:', error)
+    const fallbackRanked = [...items].sort((a, b) => b.score - a.score)
+    return fallbackRanked.slice(0, limit).map((entry) => ({
       item: entry.item,
-      vectorScore: normalizedVector,
-      keywordScore: normalizedKeyword,
-      combinedScore,
-    }
-  })
-
-  // Sort descending by combined score
-  ranked.sort((a, b) => b.combinedScore - a.combinedScore)
-
-  return ranked.slice(0, limit)
+      combinedScore: entry.score,
+    }))
+  }
 }
