@@ -1,6 +1,6 @@
 # Sellora — start here
 
-**Current state:** reconciled through packet 00C on **2026-10-02**.
+**Current state:** Part 00 complete on **2026-10-02**; see [baseline evidence](docs/BASELINE.md).
 The detailed `PROJECT_REPORT.md` and `SELLORA_BUILD_PLAN.md` are local operator records excluded from Git. This README is the repository restart guide.
 
 ## What we are building
@@ -13,9 +13,9 @@ The goal is to try for one paid engagement in roughly two months; the original p
 
 ## Current state
 
-**Useful prototype; not client-ready. Packets 00A–00B have reviewed the existing patch and established a fresh local application baseline.**
+**Useful prototype; not client-ready. Packets 00A–00D established a reviewed application and disposable-database baseline.**
 
-- The working tree contains reviewed retrieval/refusal, embedding-contract, transactional ingestion, session-authorization, and staff-draft UI repairs. Server typecheck/tests and both frontend production builds pass on the current tree.
+- Committed repairs cover retrieval/refusal, embedding contracts, transactional ingestion, sessions and the staff draft UI. Baseline server checks and frontend production builds passed; see dated evidence below.
 - A forward migration preserves previous vectors and requires explicit re-ingestion; it has not been applied to a client database in this work.
 - The dashboard now has a sourced, editable draft/copy screen. Its edits and review checkbox are session-only; durable approval and approved answers remain missing.
 - Limits, usage accounting, worker recovery, document versions/deletion, integrations, and client operations remain incomplete. The public widget remains outside the first offer because its credential/rendering issues are open.
@@ -25,7 +25,7 @@ The goal is to try for one paid engagement in roughly two months; the original p
 
 ## Next work
 
-Begin **00D — baseline handoff**: consolidate issue limits and migration/re-ingestion implications before moving to offer scope and reproducible setup. Preserve `apps/server/scripts/bulkIngest.ts`.
+Begin **01A — offer sheet**, then **02A — installation contract**. Buyer discovery and pilot boundaries require user/buyer evidence; independent local foundation repairs can proceed. Preserve `apps/server/scripts/bulkIngest.ts`.
 
 Then: baseline verification → reproducible setup/cleanup → knowledge correctness and access → limits/recovery/usage → document lifecycle and durable review → approved answers/staff UI → one email integration and conditional questionnaires → measured optimization → operations, evaluation, and paid-pilot packaging. The roadmap divides this into 18 parts with dependencies and acceptance gates.
 
