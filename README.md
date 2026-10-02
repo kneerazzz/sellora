@@ -1,89 +1,53 @@
-# Sellora
+# Sellora — start here
 
-Sellora is a high-performance, AI-native technical sales workflow backend. It acts as an autonomous AI brain that sits behind workflow automation tools like n8n, automatically answering technical buyer questions, filling out massive RFPs, and structuring CRM data.
+**Current state:** reconciled through packet 00B on **2026-10-02**.
+The detailed `PROJECT_REPORT.md` and `SELLORA_BUILD_PLAN.md` are local operator records excluded from Git. This README is the repository restart guide.
 
-Sellora handles the hard AI work: document ingestion, structure-aware chunking, local vector embeddings, grounded RAG answering (with strict citations), and structured JSON extraction from emails and call transcripts.
+## What we are building
 
----
+Sellora uses a company's documents to draft answers to buyer questions and extract sales information from emails/transcripts. It has an Express/TypeScript API, PostgreSQL/pgvector, a React staff dashboard, a Preact chat widget, and example n8n workflows.
 
-## Use Cases
+The user wants to sell it as a **managed automation service for small companies**: paid setup plus ongoing maintenance. No prospect or specific industry is identified. The working first offer is a staff-reviewed, sourced reply-drafting workflow, followed by one email integration. Small B2B software/IT-service teams are an assistant recommendation, not validated demand.
 
-1. **Automated RFP & Security Questionnaire Filling**
-   - Provide Sellora with a massive block of RFP text. It uses Groq/OpenAI to extract every individual question, embeds them using a local Ollama model (`nomic-embed-text`), queries your company's uploaded documents via `pgvector`, and returns perfectly cited answers for every question.
-2. **Customer Support & Sales Email Auto-Drafting**
-   - Connect an n8n webhook to Gmail. When a buyer emails a technical question, Sellora intercepts it, extracts the core question, finds the answer in your docs, and returns a grounded answer. n8n can then draft the reply automatically.
-3. **Automated CRM Data Entry**
-   - Forward a Zoom transcript to Sellora. It extracts buyer objections, budget, next steps, and automatically prepares a CRM Sync payload ready to be pushed to Salesforce or HubSpot.
+The goal is to try for one paid engagement in roughly two months; the original planning window ends **2026-11-25**. The user's **$1,000 setup + $500–660/month** idea is provisional. Costs, support effort, account ownership and willingness to pay remain unmeasured. Do not promise unlimited usage or assume all API/tool bills fit the fee.
 
----
+## Current state
 
-## Architecture & Tech Stack
+**Useful prototype; not client-ready. Packets 00A–00B have reviewed the existing patch and established a fresh local application baseline.**
 
-Sellora is built for performance, privacy, and modularity:
+- The working tree contains reviewed retrieval/refusal, embedding-contract, transactional ingestion, session-authorization, and staff-draft UI repairs. Server typecheck/tests and both frontend production builds pass on the current tree.
+- A forward migration preserves previous vectors and requires explicit re-ingestion; it has not been applied to a client database in this work.
+- The dashboard now has a sourced, editable draft/copy screen. Its edits and review checkbox are session-only; durable approval and approved answers remain missing.
+- Limits, usage accounting, worker recovery, document versions/deletion, integrations, and client operations remain incomplete. The public widget remains outside the first offer because its credential/rendering issues are open.
+- CRM remains a payload preview; saved n8n workflows are not verified production integrations.
 
-- **Core Backend:** Node.js, Express, TypeScript
-- **Database:** PostgreSQL with `pgvector` for native vector similarity search
-- **ORM:** Prisma
-- **AI / Embeddings:** 
-  - **Local Model (Privacy-First):** Ollama daemon running `nomic-embed-text` (768-dimensions) for fast, free local embeddings with an 8192 token context window.
-  - **LLM Provider:** Groq (`llama-3.1-8b-instant`) or OpenAI for structured extraction and text generation.
-- **Background Jobs:** Redis + BullMQ (Planned)
-- **Containerization:** Docker Compose for seamless Postgres/Redis/Ollama orchestration.
+**Evidence boundary:** packet 00B freshly passed server typecheck, 12/12 server test files, and the web/copilot production builds. These establish compilation, mocked/unit behavior, and bundling—not real PostgreSQL migration/concurrency behavior, an HTTP/browser journey, provider quality, or client acceptance. Temporary-resource cleanup is still unconfirmed.
 
-### The n8n Philosophy
-Sellora does not try to be a CRM or an email client. It delegates all "plumbing" to n8n. n8n listens for emails, calls the Sellora Webhook API, and then writes the result back to Salesforce/Zendesk.
+## Next work
 
----
+Begin **00C — reconcile database evidence** from the local build plan: inspect the guarded integration harness, use only a newly created disposable localhost PostgreSQL database, rerun migration/vector/rollback/session-race assertions, and identify/remove only confirmed prior test resources. Preserve the existing edit in `apps/server/scripts/bulkIngest.ts`.
 
-## Key Webhook Endpoints
+Then: baseline verification → reproducible setup/cleanup → knowledge correctness and access → limits/recovery/usage → document lifecycle and durable review → approved answers/staff UI → one email integration and conditional questionnaires → measured optimization → operations, evaluation, and paid-pilot packaging. The roadmap divides this into 18 parts with dependencies and acceptance gates.
 
-Sellora is controlled entirely via API Keys (passed as `Authorization: Bearer <key>`).
+## Code map and checks
 
-- **`POST /api/v1/ai/extractions/rfp`**
-  - Accepts a raw text block of an RFP/Questionnaire. Extracts all questions and automatically generates grounded answers with exact page citations.
-- **`POST /api/v1/webhooks/email-received`**
-  - Parses an incoming sales email, extracts the buyer's questions, budget, and objections, and returns a structured JSON payload for CRM updating.
-- **`POST /api/v1/documents/upload-file`**
-  - Upload a PDF/Markdown document. Sellora parses it, splits it via a custom structure-aware chunking algorithm, embeds it via Ollama, and stores it in `pgvector`.
-- **`POST /api/v1/crm-writeback/preview`**
-  - Prepares a unified `SyncLog` payload formatted perfectly for HubSpot or Salesforce based on a previous AI extraction.
+- `apps/server/src/modules/`: auth, documents, answers, extraction, events/runs, CRM preview.
+- `apps/server/src/utils/`: vector search, reranker, LLM calls and helpers.
+- `apps/server/prisma/`: schema and migrations; `src/workers/workflowWorker.ts`: database-polling worker.
+- `apps/web/`: staff dashboard. `apps/copilot/`: widget source; copied browser artifact also exists in `apps/web/public/`.
+- `n8n/`: integration examples. `docker-compose.yml`: development infrastructure only.
 
----
+Run from the project root:
 
-## Local Development
-
-### 1. Prerequisites
-- Docker & Docker Compose
-- Node.js v22+
-- A Groq or OpenAI API Key
-
-### 2. Environment Setup
-Copy the sample environment file:
 ```bash
-cp apps/server/.env.sample apps/server/.env
-```
-Fill in your `GROQ_API_KEY` (or `OPENAI_API_KEY`) and ensure `EMBEDDING_PROVIDER=local` if using Ollama.
-
-### 3. Start Infrastructure
-Start PostgreSQL (with pgvector), Redis, and the Ollama daemon:
-```bash
-docker compose up -d
-```
-*(Note: Ollama will automatically pull the `nomic-embed-text` model on startup if configured).*
-
-### 4. Run the Server
-Install dependencies and run the Express app:
-```bash
-cd apps/server
-npm install
-npx prisma generate
-npx prisma db push
-npm run dev
+(cd apps/server && npm run typecheck)
+(cd apps/server && npm test)
+(cd apps/web && npm run build)
+(cd apps/copilot && npm run build)
 ```
 
-### 5. Testing
-Run the test suite and typechecker:
-```bash
-npm run typecheck
-npm test
-```
+Root `npm test` is a placeholder. Clean installation remains unverified; reconcile the preceding disposable migration evidence in Part 00. Do not use `prisma db push` as a replacement for repairing migrations. Existing environment files can point to persistent services: choose an explicitly disposable target before integration tests. Local embeddings still require compute; generation can send document text to external providers. OpenAI embeddings are currently a stub. The separate worker is launched with `npm run worker:workflows` in `apps/server`; starting it processes queued work.
+
+## Continuity
+
+Read this file, the local `AGENTS.md`, the selected `SELLORA_BUILD_PLAN.md` packet, and relevant `PROJECT_REPORT.md` issues. Do not load every old summary. The report distinguishes user decisions, recommendations, source findings and verification. Writing a plan does not authorize deployment, purchases, or outreach.
