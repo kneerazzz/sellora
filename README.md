@@ -1,6 +1,6 @@
 # Sellora — start here
 
-**Current state:** reconciled through packet 00B on **2026-10-02**.
+**Current state:** reconciled through packet 00C on **2026-10-02**.
 The detailed `PROJECT_REPORT.md` and `SELLORA_BUILD_PLAN.md` are local operator records excluded from Git. This README is the repository restart guide.
 
 ## What we are building
@@ -21,11 +21,11 @@ The goal is to try for one paid engagement in roughly two months; the original p
 - Limits, usage accounting, worker recovery, document versions/deletion, integrations, and client operations remain incomplete. The public widget remains outside the first offer because its credential/rendering issues are open.
 - CRM remains a payload preview; saved n8n workflows are not verified production integrations.
 
-**Evidence boundary:** packet 00B freshly passed server typecheck, 12/12 server test files, and the web/copilot production builds. These establish compilation, mocked/unit behavior, and bundling—not real PostgreSQL migration/concurrency behavior, an HTTP/browser journey, provider quality, or client acceptance. Temporary-resource cleanup is still unconfirmed.
+**Evidence boundary:** packet 00B passed server typecheck, 12/12 server test files, and both frontend builds. Packet 00C passed real disposable PostgreSQL migration preservation, vector search/isolation, rollback and refresh-race checks with deterministic providers. Both identified test containers and their disposable storage were removed; regular services remained. HTTP/browser journeys, Prisma migration bookkeeping, provider quality and client acceptance remain unverified.
 
 ## Next work
 
-Begin **00C — reconcile database evidence** from the local build plan: inspect the guarded integration harness, use only a newly created disposable localhost PostgreSQL database, rerun migration/vector/rollback/session-race assertions, and identify/remove only confirmed prior test resources. Preserve the existing edit in `apps/server/scripts/bulkIngest.ts`.
+Begin **00D — baseline handoff**: consolidate issue limits and migration/re-ingestion implications before moving to offer scope and reproducible setup. Preserve `apps/server/scripts/bulkIngest.ts`.
 
 Then: baseline verification → reproducible setup/cleanup → knowledge correctness and access → limits/recovery/usage → document lifecycle and durable review → approved answers/staff UI → one email integration and conditional questionnaires → measured optimization → operations, evaluation, and paid-pilot packaging. The roadmap divides this into 18 parts with dependencies and acceptance gates.
 

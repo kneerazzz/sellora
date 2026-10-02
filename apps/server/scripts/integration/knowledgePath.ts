@@ -68,11 +68,14 @@ try {
   console.log('PASS chunking, atomic persistence, 768-dimensional vector search and organization isolation')
 
   const before = await prisma.documentChunk.findMany({ where: { documentId: 'doc-a' } })
+  const vectorsBefore = await client.query('SELECT id, embedding::text FROM document_chunks WHERE "documentId"=$1 ORDER BY id', ['doc-a'])
   await assert.rejects(prisma.$transaction((tx) => persistIngestedChunks(tx,
     { documentId: 'doc-a', chunks, embeddings: chunks.map(() => vector), isReingest: true },
     async (rows, transaction) => { await upsertChunkEmbeddings(rows, transaction); throw new Error('injected interruption') })), /injected interruption/)
   const after = await prisma.documentChunk.findMany({ where: { documentId: 'doc-a' } })
-  assert.deepEqual(after.map((chunk) => chunk.id), before.map((chunk) => chunk.id))
+  assert.deepEqual(after, before)
+  assert.deepEqual((await client.query('SELECT id, embedding::text FROM document_chunks WHERE "documentId"=$1 ORDER BY id', ['doc-a'])).rows, vectorsBefore.rows)
+  assert.deepEqual(await prisma.document.findUniqueOrThrow({ where: { id: 'doc-a' } }), ready)
   console.log('PASS interrupted replacement rolls back chunks and vector writes')
 
   let generations = 0
@@ -103,8 +106,10 @@ try {
   const replacements = await prisma.refreshToken.findMany({ where: { token: { startsWith: 'race-replacement-' } } })
   assert.equal(replacements.length, 1)
   assert.equal(replacements[0]!.isRevoked, false)
+  assert.equal((await prisma.refreshToken.findUniqueOrThrow({ where: { token: 'race-original' } })).isRevoked, true)
   await assert.rejects(rotate('race-replacement-replay'), (error: any) => error.statusCode === 401)
   assert.equal((await prisma.refreshToken.findUniqueOrThrow({ where: { id: replacements[0]!.id } })).isRevoked, false)
+  assert.equal(await prisma.refreshToken.count({ where: { token: 'race-replacement-replay' } }), 0)
   await prisma.refreshToken.create({ data: { token: 'rollback-original', expiresAt, userId: 'user-a' } })
   await assert.rejects(prisma.$transaction((tx) => consumeRefreshToken(tx, 'rollback-original', async () => {
     throw new Error('replacement failed')
