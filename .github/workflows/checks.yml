@@ -1,0 +1,36 @@
+name: Local foundation checks
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - run: npm install --global npm@12.0.2
+      - name: Install locked app dependencies
+        run: |
+          npm ci
+          npm --prefix apps/server ci
+          npm --prefix apps/web ci --allow-remote=all
+          npm --prefix apps/copilot ci
+      - name: Generate client without connecting to a database
+        run: npm --prefix apps/server run db:generate
+        env:
+          DATABASE_URL: postgresql://unused:unused@127.0.0.1:1/sellora_test_generate
+      - name: Whitespace, typecheck, deterministic tests and frontend builds
+        run: |
+          git diff --check HEAD^ HEAD
+          npm run check
+      - name: Required disposable database and process checks
+        run: npm --prefix apps/server run test:db

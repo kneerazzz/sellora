@@ -1,8 +1,9 @@
 import 'dotenv/config'
 import { createApp } from './app'
 import { prisma } from './config/prisma'
+import { env } from './config/env'
 
-const PORT = process.env.PORT ?? 4000
+const PORT = env.PORT
 
 async function bootstrap() {
   // ── Verify DB connection before accepting traffic ──────────────────────

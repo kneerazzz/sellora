@@ -20,6 +20,8 @@ services:
       - sellora_network
 
   redis:
+    # Retained for old local setups; the current worker polls PostgreSQL.
+    profiles: ["legacy-redis"]
     image: redis:7-alpine
     container_name: sellora_redis
     restart: always

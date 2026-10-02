@@ -1,6 +1,6 @@
 # Sellora — start here
 
-**Current state:** Part 00 complete on **2026-10-02**; see [baseline evidence](docs/BASELINE.md).
+**Current state:** Parts 00 and 02 complete locally on **2026-10-02**; 01A scope written, buyer discovery pending. See [baseline evidence](docs/BASELINE.md) and [development contract](docs/DEVELOPMENT.md).
 The detailed `PROJECT_REPORT.md` and `SELLORA_BUILD_PLAN.md` are local operator records excluded from Git. This README is the repository restart guide.
 
 ## What we are building
@@ -21,11 +21,11 @@ The goal is to try for one paid engagement in roughly two months; the original p
 - Limits, usage accounting, worker recovery, document versions/deletion, integrations, and client operations remain incomplete. The public widget remains outside the first offer because its credential/rendering issues are open.
 - CRM remains a payload preview; saved n8n workflows are not verified production integrations.
 
-**Evidence boundary:** packet 00B passed server typecheck, 12/12 server test files, and both frontend builds. Packet 00C passed real disposable PostgreSQL migration preservation, vector search/isolation, rollback and refresh-race checks with deterministic providers. Both identified test containers and their disposable storage were removed; regular services remained. HTTP/browser journeys, Prisma migration bookkeeping, provider quality and client acceptance remain unverified.
+**Evidence boundary:** Part 02 passed clean app installs/client generation, server typecheck, 13/13 test files and both frontend builds. Disposable pgvector/pg15 tests passed Prisma deployment/repeat deployment, API health/401 boundary, empty-queue worker startup/shutdown, migration preservation, vector isolation, rollback and refresh races. Test containers/storage were removed; regular services remained. Hosted CI, authenticated upload/browser journeys, worker recovery, provider quality and client acceptance remain unverified.
 
 ## Next work
 
-Begin **01A — offer sheet**, then **02A — installation contract**. Buyer discovery and pilot boundaries require user/buyer evidence; independent local foundation repairs can proceed. Preserve `apps/server/scripts/bulkIngest.ts`.
+Begin **03A — review retrieval repairs**. [01A's working offer sheet](docs/FIRST_OFFER.md) is complete; 01B discovery and 01C pilot boundaries await user/buyer evidence. Preserve `apps/server/scripts/bulkIngest.ts`. Update status after each packet; commit locally after complete parts, without pushing.
 
 Then: baseline verification → reproducible setup/cleanup → knowledge correctness and access → limits/recovery/usage → document lifecycle and durable review → approved answers/staff UI → one email integration and conditional questionnaires → measured optimization → operations, evaluation, and paid-pilot packaging. The roadmap divides this into 18 parts with dependencies and acceptance gates.
 
@@ -46,7 +46,7 @@ Run from the project root:
 (cd apps/copilot && npm run build)
 ```
 
-Root `npm test` is a placeholder. Clean installation remains unverified; reconcile the preceding disposable migration evidence in Part 00. Do not use `prisma db push` as a replacement for repairing migrations. Existing environment files can point to persistent services: choose an explicitly disposable target before integration tests. Local embeddings still require compute; generation can send document text to external providers. OpenAI embeddings are currently a stub. The separate worker is launched with `npm run worker:workflows` in `apps/server`; starting it processes queued work.
+Root `npm test` runs server tests; `npm run check` runs the four checks above. Follow [DEVELOPMENT.md](docs/DEVELOPMENT.md) for clean installation and explicit `npm --prefix apps/server run test:db` (requires Docker; owns/cleans a fresh disposable target). Do not use `prisma db push` to repair migrations. Existing environment files can point to persistent services. Local embeddings require compute; generation can send text externally. Only local Nomic/768 embeddings are accepted at startup. The separate `worker:workflows` command processes the selected database's queue; Redis is not required. CI is configured but has not run on GitHub.
 
 ## Continuity
 
