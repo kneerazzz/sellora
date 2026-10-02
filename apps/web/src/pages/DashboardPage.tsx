@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { FileCheck, Workflow, ArrowUpRight } from 'lucide-react'
 import { listDocuments } from '@/api/documents'
 import { listWorkflowRuns } from '@/api/workflowRuns'
@@ -50,11 +51,11 @@ export function DashboardPage() {
         <Card className="group">
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-sm font-medium text-zinc-400">Documents embedded</p>
+              <p className="text-sm font-medium text-zinc-400">Documents ready</p>
               <p className="mt-2 text-3xl font-semibold text-white">
                 {embeddedCount ?? '—'}
               </p>
-              <p className="mt-1 text-xs text-zinc-500">Ready for RAG queries</p>
+              <p className="mt-1 text-xs text-zinc-500">Ready to use as reply sources</p>
             </div>
             <div className="rounded-lg bg-emerald-500/10 p-2.5 ring-1 ring-emerald-500/20 transition-transform duration-200 group-hover:scale-105">
               <FileCheck className="h-5 w-5 text-emerald-400" />
@@ -83,15 +84,15 @@ export function DashboardPage() {
           <div>
             <h2 className="text-sm font-semibold text-white">Quick start</h2>
             <p className="mt-1 text-sm text-zinc-400">
-              Upload product docs, generate an API key, and connect n8n webhooks.
+              Turn an approved company document into a reply your team can review.
             </p>
           </div>
           <ArrowUpRight className="h-5 w-5 text-zinc-600" />
         </div>
         <ol className="mt-4 space-y-2 text-sm text-zinc-400">
-          <li>1. Upload PDFs or DOCX files in Documents</li>
-          <li>2. Create a webhook API key for n8n</li>
-          <li>3. Monitor workflow runs and preview CRM writebacks</li>
+          <li>1. <Link className="underline text-zinc-200" to="/documents">Upload approved documents in Knowledge</Link></li>
+          <li>2. <Link className="underline text-zinc-200" to="/draft">Ask a buyer question and create a draft</Link></li>
+          <li>3. Check the sources, edit the reply, and copy it into your email</li>
         </ol>
       </Card>
     </div>

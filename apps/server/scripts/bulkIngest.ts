@@ -70,9 +70,9 @@ async function main() {
   }
 
   console.log('\n=======================================')
-  console.log('🎉 Bulk Ingestion Complete!')
-  console.log(`✅ Successfully ingested: ${successCount}`)
-  console.log(`❌ Failed: ${failCount}`)
+  console.log('Bulk Ingestion Complete!')
+  console.log(`Successfully ingested: ${successCount}`)
+  console.log(`Failed: ${failCount}`)
   console.log('=======================================')
 
   await prisma.$disconnect()

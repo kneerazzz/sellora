@@ -1,3 +1,4 @@
+import { resolveCurrentUser } from '../modules/auth/sessionPolicy'
 import { Request, Response, NextFunction } from 'express'
 import jwt from 'jsonwebtoken'
 import { ApiError } from '../utils/apiError'
@@ -75,7 +76,7 @@ function touchApiKey(apiKeyId: string) {
 
 /**
  * Verifies the JWT access token from the Authorization header.
- * Attaches the decoded payload to req.user.
+ * Resolves current active user authorization from the database.
  *
  * Usage: add `authenticate` to any protected route.
  */
@@ -100,15 +101,7 @@ export async function authenticate(
       throw ApiError.unauthorized('Invalid access token')
     }
 
-    // Attach to request — downstream controllers use req.user
-    req.user = {
-      id: payload.sub,
-      email: payload.email,
-      role: payload.role,
-      organizationId: payload.organizationId,
-      firstName: '',
-      lastName: '',
-    }
+    req.user = await resolveCurrentUser(prisma, payload)
 
     next()
   } catch (err) {
@@ -163,27 +156,18 @@ export function authenticateJwtOrApiKey(...allowedApiKeyScopes: ApiKeyScope[]) {
     try {
       const token = extractBearerToken(req)
 
+      let payload: JwtAccessPayload | undefined
       try {
-        const payload = jwt.verify(
-          token,
-          env.JWT_ACCESS_SECRET as string
-        ) as JwtAccessPayload
-
-        req.user = {
-          id: payload.sub,
-          email: payload.email,
-          role: payload.role,
-          organizationId: payload.organizationId,
-          firstName: '',
-          lastName: '',
-        }
-
-        next()
-        return
+        payload = jwt.verify(token, env.JWT_ACCESS_SECRET as string) as JwtAccessPayload
       } catch (jwtErr) {
         if (jwtErr instanceof jwt.TokenExpiredError) {
           throw ApiError.unauthorized('Access token has expired')
         }
+      }
+      if (payload) {
+        req.user = await resolveCurrentUser(prisma, payload)
+        next()
+        return
       }
 
       const apiKey = await verifyApiKey(token)

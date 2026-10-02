@@ -5,18 +5,19 @@ import {
   FileText,
   KeyRound,
   LayoutDashboard,
+  MessageSquare,
   Users,
   Workflow,
   Zap,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useAuth } from '@/context/AuthContext'
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
-  { to: '/documents', label: 'Documents', icon: FileText },
-  { to: '/api-keys', label: 'API Keys', icon: KeyRound },
-  { to: '/workflow-runs', label: 'Workflow Runs', icon: Workflow },
-  { to: '/team', label: 'Team', icon: Users },
+  { to: '/draft', label: 'Draft a reply', icon: MessageSquare },
+  { to: '/documents', label: 'Knowledge', icon: FileText },
+  { to: '/workflow-runs', label: 'Activity', icon: Workflow },
 ]
 
 interface SidebarProps {
@@ -25,6 +26,13 @@ interface SidebarProps {
 }
 
 export function Sidebar({ collapsed, onToggle }: SidebarProps) {
+  const { user } = useAuth()
+  const settingsItems = [
+    ...(user?.role === 'ADMIN' || user?.role === 'MANAGER'
+      ? [{ to: '/api-keys', label: 'API Keys', icon: KeyRound }]
+      : []),
+    { to: '/team', label: 'Team', icon: Users },
+  ]
   return (
     <aside
       className={cn(
@@ -39,7 +47,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         {!collapsed && (
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold text-white">Sellora</p>
-            <p className="truncate text-xs text-zinc-500">Admin Panel</p>
+            <p className="truncate text-xs text-zinc-500">Team workspace</p>
           </div>
         )}
       </div>
@@ -50,6 +58,8 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             key={to}
             to={to}
             end={end}
+            aria-label={label}
+            title={collapsed ? label : undefined}
             className={({ isActive }) =>
               cn(
                 'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200',
@@ -63,6 +73,19 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             {!collapsed && <span>{label}</span>}
           </NavLink>
         ))}
+        <div className="!mt-6 border-t border-white/10 pt-3">
+          {!collapsed && <p className="px-3 pb-2 text-xs font-medium text-zinc-500">Settings</p>}
+          {settingsItems.map(({ to, label, icon: Icon }) => (
+            <NavLink key={to} to={to} aria-label={label} title={collapsed ? label : undefined}
+              className={({ isActive }) => cn(
+                'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+                isActive ? 'bg-white/10 text-white' : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-100'
+              )}>
+              <Icon className="h-4 w-4 shrink-0" />
+              {!collapsed && <span>{label}</span>}
+            </NavLink>
+          ))}
+        </div>
       </nav>
 
       <button

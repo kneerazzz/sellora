@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Upload } from 'lucide-react'
 import { listDocuments, uploadDocumentFile } from '@/api/documents'
 import { getErrorMessage } from '@/api/client'
+import { useAuth } from '@/context/AuthContext'
 import type { Document } from '@/types/api'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -14,6 +15,8 @@ import {
 import { formatBytes, formatDate } from '@/lib/utils'
 
 export function DocumentsPage() {
+  const { user } = useAuth()
+  const canUpload = user?.role === 'ADMIN' || user?.role === 'MANAGER'
   const [documents, setDocuments] = useState<Document[]>([])
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
@@ -54,12 +57,12 @@ export function DocumentsPage() {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-white">Documents</h1>
+          <h1 className="text-2xl font-semibold text-white">Knowledge</h1>
           <p className="mt-1 text-sm text-zinc-400">
-            Upload PDF and DOCX files for RAG-powered answers.
+            Approved company documents used to draft replies. Ask an admin or manager to upload new sources.
           </p>
         </div>
-        <div>
+        {canUpload && <div>
           <input
             ref={fileRef}
             type="file"
@@ -79,7 +82,7 @@ export function DocumentsPage() {
             <Upload className="h-4 w-4" />
             Upload document
           </Button>
-        </div>
+        </div>}
       </div>
 
       {error && (

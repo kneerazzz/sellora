@@ -3,6 +3,9 @@ import { describe, it } from 'node:test'
 import { groundedAnswerSchema } from './groundedAnswers.schema'
 
 describe('groundedAnswerSchema', () => {
+  it('rejects whitespace-only questions after trimming', () => {
+    assert.equal(groundedAnswerSchema.safeParse({ body: { question: '    ' } }).success, false)
+  })
   it('accepts a question and defaults citation count', () => {
     const parsed = groundedAnswerSchema.parse({
       body: {

@@ -1,3 +1,4 @@
+import { EMBEDDING_MODEL } from '../../../../utils/embeddingContract'
 import { EmbeddingProvider } from './EmbeddingProvider'
 import { ApiError } from '../../../../utils/apiError'
 import { env } from '../../../../config/env'
@@ -10,7 +11,7 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
     const url = env.LOCAL_EMBEDDING_SERVICE_URL || 'http://127.0.0.1:11435'
     // Extract host from url, since Ollama config takes host config
     this.embedModel = new OllamaEmbedding({
-      model: 'nomic-embed-text',
+      model: EMBEDDING_MODEL,
       config: {
         host: url,
       },

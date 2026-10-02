@@ -1,3 +1,5 @@
+import type { Prisma } from '@prisma/client'
+import { consumeRefreshToken } from './sessionPolicy'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { prisma } from '../../config/prisma'
@@ -145,40 +147,9 @@ async function refresh(
 ): Promise<{ user: AuthUser; tokens: AuthTokens }> {
   const tokenHash = sha256Hex(rawRefreshToken)
 
-  const storedToken = await prisma.refreshToken.findUnique({
-    where: { token: tokenHash },
-    include: { user: true },
-  })
-
-  // Token reuse detected — revoke entire user's sessions
-  if (storedToken?.isRevoked) {
-    await prisma.refreshToken.updateMany({
-      where: { userId: storedToken.userId },
-      data: { isRevoked: true },
-    })
-    throw ApiError.unauthorized('Token reuse detected. All sessions have been revoked.')
-  }
-
-  if (!storedToken) {
-    throw ApiError.unauthorized('Invalid refresh token')
-  }
-
-  if (storedToken.expiresAt < new Date()) {
-    throw ApiError.unauthorized('Refresh token has expired')
-  }
-
-  if (!storedToken.user.isActive) {
-    throw ApiError.forbidden('Account has been deactivated')
-  }
-
-  // Revoke old token
-  await prisma.refreshToken.update({
-    where: { id: storedToken.id },
-    data: { isRevoked: true },
-  })
-
-  const tokens = await issueTokens(storedToken.user, meta)
-  return { user: buildAuthUser(storedToken.user), tokens }
+  const result = await prisma.$transaction((tx) => consumeRefreshToken(tx, tokenHash,
+    (user, transaction) => issueTokens(user, meta, transaction)))
+  return { user: buildAuthUser(result.user), tokens: result.tokens }
 }
 
 /**
@@ -433,7 +404,8 @@ async function acceptInvite(
 
 async function issueTokens(
   user: { id: string; email: string; role: any; organizationId: string },
-  meta: { ipAddress?: string; userAgent?: string }
+  meta: { ipAddress?: string; userAgent?: string },
+  client: Pick<Prisma.TransactionClient, 'refreshToken'> = prisma
 ): Promise<AuthTokens> {
   const rawRefreshToken = randomHex(64)
   const tokenHash = sha256Hex(rawRefreshToken)
@@ -447,7 +419,7 @@ async function issueTokens(
 
   const accessToken = generateAccessToken(accessPayload)
 
-  await prisma.refreshToken.create({
+  await client.refreshToken.create({
     data: {
       token: tokenHash,
       expiresAt: new Date(Date.now() + REFRESH_TOKEN_EXPIRES_MS),

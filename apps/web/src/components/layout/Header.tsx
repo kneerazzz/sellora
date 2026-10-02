@@ -6,9 +6,10 @@ import { Button } from '@/components/ui/Button'
 
 const routeLabels: Record<string, string> = {
   '/': 'Dashboard',
-  '/documents': 'Documents',
+  '/draft': 'Draft a reply',
+  '/documents': 'Knowledge',
   '/api-keys': 'API Keys',
-  '/workflow-runs': 'Workflow Runs',
+  '/workflow-runs': 'Activity',
   '/team': 'Team',
 }
 

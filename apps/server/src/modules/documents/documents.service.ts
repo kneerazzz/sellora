@@ -3,14 +3,13 @@ import { env } from '../../config/env'
 import { prisma } from '../../config/prisma'
 import { ApiError } from '../../utils/apiError'
 import {
-  chunkText,
-  estimateTokens,
   extractDocumentText,
   inferDocumentType,
   inferMimeType,
   storeUploadBuffer,
   storeTextUpload,
 } from '../../services/document/documentProcessing.service'
+import { persistIngestedChunks } from './ingestionPersistence'
 import { structureAwareChunk } from '../../services/document/chunking.service'
 import { getEmbeddings } from '../../utils/embeddings'
 import { upsertChunkEmbeddings, hasEmbeddingsConfigured } from '../../utils/vectorSearch'
@@ -118,51 +117,13 @@ async function ingestChunks(params: {
     embeddings = await getEmbeddings(enrichedChunks.map((c) => c.text))
   }
 
-  const document = await prisma.$transaction(async (tx) => {
-    if (isReingest) {
-      await tx.documentChunk.deleteMany({ where: { documentId } })
-    }
-
-    await tx.documentChunk.createMany({
-      data: enrichedChunks.map((c) => ({
-        documentId,
-        chunkIndex: c.chunkIndex,
-        text: c.text,
-        tokenCount: c.tokenCount,
-        overlapTokens: c.overlapTokens,
-        headingPath: c.headingPath,
-        sectionTitle: c.sectionTitle,
-      })),
-    })
-
-    return tx.document.update({
-      where: { id: documentId },
-      data: {
-        status: 'COMPLETED',
-        totalChunks: chunks.length,
-        embeddingModel: useEmbeddings ? (env.EMBEDDING_PROVIDER === 'openai' ? env.OPENAI_EMBEDDING_MODEL : 'all-minilm') : 'local-placeholder',
-        ingestedAt: new Date(),
-        errorMessage: null,
-        ...(params.pageCount !== undefined ? { pageCount: params.pageCount } : {}),
-      },
-      select: documentSelect,
-    })
-  })
-
-  if (useEmbeddings && embeddings.length > 0) {
-    const createdChunks = await prisma.documentChunk.findMany({
-      where: { documentId },
-      select: { id: true },
-      orderBy: { chunkIndex: 'asc' },
-    })
-
-    const chunksWithEmbeddings = createdChunks.map((chunk, index) => ({
-      id: chunk.id,
-      embedding: embeddings[index]!,
-    }))
-
-    await upsertChunkEmbeddings(chunksWithEmbeddings)
-  }
+  const document = await prisma.$transaction((tx) => persistIngestedChunks(tx, {
+    documentId,
+    chunks: enrichedChunks,
+    embeddings: useEmbeddings ? embeddings : null,
+    isReingest,
+    pageCount: params.pageCount,
+  }, upsertChunkEmbeddings))
 
   return document
 }

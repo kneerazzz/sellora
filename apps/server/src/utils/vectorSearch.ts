@@ -18,7 +18,8 @@ export type VectorSearchResult = {
 const UPSERT_BATCH_SIZE = 100
 
 export async function upsertChunkEmbeddings(
-  chunks: Array<{ id: string; embedding: number[] }>
+  chunks: Array<{ id: string; embedding: number[] }>,
+  client: Pick<Prisma.TransactionClient, '$executeRawUnsafe'> = prisma
 ): Promise<void> {
   for (let i = 0; i < chunks.length; i += UPSERT_BATCH_SIZE) {
     const batch = chunks.slice(i, i + UPSERT_BATCH_SIZE)
@@ -26,7 +27,7 @@ export async function upsertChunkEmbeddings(
     await Promise.all(
       batch.map((chunk) => {
         const vectorStr = `[${chunk.embedding.join(',')}]`
-        return prisma.$executeRawUnsafe(
+        return client.$executeRawUnsafe(
           `UPDATE document_chunks SET embedding = $1::vector WHERE id = $2`,
           vectorStr,
           chunk.id
@@ -42,12 +43,12 @@ export async function searchSimilarChunks(params: {
   queryText: string
   topK?: number
   documentIds?: string[]
-  minScore?: number
 }): Promise<VectorSearchResult[]> {
   const { organizationId, queryVector, queryText } = params
   const topK = params.topK ?? 20
   const fetchK = topK * 3
-  const minScore = params.minScore ?? 0.0
+  // An explicit empty scope means no documents, never the entire organization.
+  if (params.documentIds?.length === 0) return []
 
   const vectorStr = `[${queryVector.join(',')}]`
   
@@ -118,7 +119,8 @@ export async function searchSimilarChunks(params: {
     }>
   >(query)
 
-  return rows.filter((row) => row.score >= minScore)
+  // Reciprocal-rank fusion orders candidates; it does not measure evidence sufficiency.
+  return rows
 }
 
 export function hasEmbeddingsConfigured(): boolean {

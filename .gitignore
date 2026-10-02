@@ -10,4 +10,10 @@ dist/
 
 codex.md
 project.md
-documents
+/AGENTS.md
+/CLIENT_READINESS.md
+/FIRST_CLIENT_PLAN.md
+/PROJECT_REPORT.md
+/SELLORA_BUILD_PLAN.md
+/documents/
+apps/server/uploads/

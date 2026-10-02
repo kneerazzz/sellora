@@ -5,6 +5,7 @@ import { GuestRoute, ProtectedRoute } from '@/components/ProtectedRoute'
 import { AcceptInvitePage, LoginPage, RegisterPage } from '@/pages/auth/AuthPages'
 import { ApiKeysPage } from '@/pages/ApiKeysPage'
 import { DashboardPage } from '@/pages/DashboardPage'
+import { DraftPage } from '@/pages/DraftPage'
 import { DocumentsPage } from '@/pages/DocumentsPage'
 import { TeamPage } from '@/pages/TeamPage'
 import { WorkflowRunsPage } from '@/pages/WorkflowRunsPage'
@@ -40,6 +41,7 @@ export default function App() {
             }
           >
             <Route index element={<DashboardPage />} />
+            <Route path="draft" element={<DraftPage />} />
             <Route path="documents" element={<DocumentsPage />} />
             <Route path="api-keys" element={<ApiKeysPage />} />
             <Route path="workflow-runs" element={<WorkflowRunsPage />} />

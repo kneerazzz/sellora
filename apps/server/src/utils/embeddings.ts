@@ -1,3 +1,4 @@
+import { validateEmbeddings } from './embeddingContract'
 import { getEmbeddingProvider } from '../modules/ai/providers/embedding'
 
 /**
@@ -6,5 +7,7 @@ import { getEmbeddingProvider } from '../modules/ai/providers/embedding'
  */
 export async function getEmbeddings(texts: string[], options?: { isQuery?: boolean }): Promise<number[][]> {
   const provider = getEmbeddingProvider()
-  return provider.embed(texts, options)
+  const vectors = await provider.embed(texts, options)
+  validateEmbeddings(vectors, texts.length)
+  return vectors
 }

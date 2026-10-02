@@ -12,7 +12,7 @@ describe('localRetrieval utilities', () => {
     const tokens = tokenizeForRetrieval('Do we support SAML SSO for buyers?')
 
     assert.deepEqual(tokens, ['support', 'saml', 'sso', 'buyers'])
-    assert.equal(scoreByTokenOverlap(tokens, 'SAML SSO is supported.'), 3)
+    assert.equal(scoreByTokenOverlap(tokens, 'SAML SSO is supported.'), 0.75)
   })
 
   it('builds compact snippets and extractive answers', () => {

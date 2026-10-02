@@ -149,6 +149,7 @@ model DocumentChunk {
   overlapTokens Int                    @default(0)
   sectionTitle  String?
   embedding     Unsupported("vector(768)")?
+  legacyEmbedding Unsupported("vector(384)")?
   document      Document               @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
   @@unique([documentId, chunkIndex])
