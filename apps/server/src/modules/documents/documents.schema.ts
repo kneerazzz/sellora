@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { DocumentStatus, DocumentType } from '@prisma/client'
+import { EMBEDDING_MODEL } from '../../utils/embeddingContract'
 
 export const createDocumentSchema = z.object({
   body: z.object({
@@ -62,7 +63,7 @@ export const ingestDocumentTextSchema = z.object({
   body: z.object({
     text: z.string().min(1),
     pageCount: z.coerce.number().int().min(1).optional(),
-    embeddingModel: z.string().min(1).max(100).default('local-placeholder').optional(),
+    embeddingModel: z.literal(EMBEDDING_MODEL).optional(),
   }),
 })
 

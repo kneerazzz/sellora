@@ -25,7 +25,7 @@ describe('documents schemas', () => {
     assert.deepEqual(parsed.body.tags, ['sales', 'playbook'])
   })
 
-  it('defaults the placeholder embedding model for manual text ingestion', () => {
+  it('leaves model selection to the server and rejects incompatible declarations', () => {
     const parsed = ingestDocumentTextSchema.parse({
       params: { id: 'clw0000000000000000000000' },
       body: {
@@ -33,7 +33,11 @@ describe('documents schemas', () => {
       },
     })
 
-    assert.equal(parsed.body.embeddingModel, 'local-placeholder')
+    assert.equal(parsed.body.embeddingModel, undefined)
+    assert.equal(ingestDocumentTextSchema.safeParse({
+      params: { id: 'clw0000000000000000000000' },
+      body: { text: 'Source content', embeddingModel: 'all-minilm' },
+    }).success, false)
   })
 
   it('accepts uploaded markdown content', () => {

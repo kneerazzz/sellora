@@ -14,3 +14,11 @@ export function hasQuestionEvidence(question: string, text: string): boolean {
   const matches = terms.filter((term) => sourceTerms.has(term)).length
   return matches >= Math.min(2, terms.length) && matches / terms.length >= 0.5
 }
+
+/** Require lexical coverage of each explicit question part, including fallback. */
+export function hasQuestionPartEvidence(question: string, texts: string[]): boolean {
+  const parts = question.split(/[?;\n]+|\b(?:and|also|plus)\b|&/i)
+    .map(part => part.trim()).filter(part => tokenizeForRetrieval(part).length > 0)
+  const context = texts.join('\n')
+  return parts.length > 0 && parts.every(part => hasQuestionEvidence(part, context))
+}

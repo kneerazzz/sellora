@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client'
+import { unlink } from 'node:fs/promises'
 import { env } from '../../config/env'
 import { prisma } from '../../config/prisma'
 import { ApiError } from '../../utils/apiError'
@@ -145,6 +146,12 @@ async function createIngestedDocument(params: IngestStoredDocumentParams): Promi
       uploadedById: params.context.userId,
     },
     select: { id: true },
+  }).catch(async error => {
+    // No record owns this newly written original if creation fails.
+    await unlink(params.storagePath).catch(() => {
+      console.error('Failed to remove an unowned upload after document creation failed')
+    })
+    throw error
   })
 
   try {
@@ -235,15 +242,16 @@ async function uploadMultipartDocument(
     throw ApiError.badRequest('Unsupported document type')
   }
 
+  // Parse before writing an original so invalid uploads cannot leave orphan files.
+  const extracted = await extractDocumentText({
+    fileType: inferredFileType,
+    buffer: file.buffer,
+  })
   const stored = await storeUploadBuffer({
     filename: file.originalname,
     buffer: file.buffer,
     organizationId: context.organizationId,
     storageRoot: env.DOCUMENT_STORAGE_DIR,
-  })
-  const extracted = await extractDocumentText({
-    fileType: inferredFileType,
-    buffer: stored.buffer,
   })
 
   return createIngestedDocument({
@@ -319,13 +327,16 @@ async function ingestDocumentText(
     throw ApiError.notFound('Document not found')
   }
 
-  await prisma.document.update({
-    where: { id: documentId },
+  // One service request owns ingestion until it completes or fails. A competing
+  // request must not overwrite the winner's status or race its chunk replacement.
+  const claimed = await prisma.document.updateMany({
+    where: { id: documentId, organizationId, status: { not: 'PROCESSING' } },
     data: {
       status: 'PROCESSING',
       errorMessage: null,
     },
   })
+  if (claimed.count !== 1) throw ApiError.conflict('Document ingestion is already in progress')
 
   try {
     return await ingestChunks({

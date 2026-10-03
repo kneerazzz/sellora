@@ -1,6 +1,6 @@
 # Sellora — start here
 
-**Current state:** Parts 00 and 02 complete locally on **2026-10-02**; 01A scope written, buyer discovery pending. See [baseline evidence](docs/BASELINE.md) and [development contract](docs/DEVELOPMENT.md).
+**Current state:** Parts 00/02/03 complete locally as of **2026-10-03**; 01A scope written, buyer discovery pending. See [baseline evidence](docs/BASELINE.md), [evidence policy](docs/EVIDENCE_POLICY.md) and [development contract](docs/DEVELOPMENT.md).
 The detailed `PROJECT_REPORT.md` and `SELLORA_BUILD_PLAN.md` are local operator records excluded from Git. This README is the repository restart guide.
 
 ## What we are building
@@ -23,9 +23,11 @@ The goal is to try for one paid engagement in roughly two months; the original p
 
 **Evidence boundary:** Part 02 passed clean app installs/client generation, server typecheck, 13/13 test files and both frontend builds. Disposable pgvector/pg15 tests passed Prisma deployment/repeat deployment, API health/401 boundary, empty-queue worker startup/shutdown, migration preservation, vector isolation, rollback and refresh races. Test containers/storage were removed; regular services remained. Hosted CI, authenticated upload/browser journeys, worker recovery, provider quality and client acceptance remain unverified.
 
+Part 03 added real authenticated HTTP TXT/Markdown/PDF/DOCX upload/search, duplicate/retry/concurrent conflict, vector/count rejection and SQL rollback acceptance on disposable targets. Server typecheck and 14/14 test files passed; the [26-question synthetic corpus](apps/server/test/fixtures/knowledge/README.md) passed both offline paths. Disposable resources were removed. Authenticated uploads are now locally verified; browser journeys, production workload and live answer quality remain unverified. The [upgrade runbook](docs/KNOWLEDGE_UPGRADE.md) covers supported shapes and rebuild limits. Astra review is pending.
+
 ## Next work
 
-Begin **03C — ingestion correctness**. 03A/03B have dated local evidence in the operator report; 03C has partial uncommitted work and no recorded acceptance. The local operator plan contains bounded task cards, checks, and the Astra review handoff.
+Begin **04A — session semantics**. Part 03 is complete locally with dated report evidence. The local operator plan contains bounded task cards, checks, and the Astra review handoff.
 
 [01A's working offer sheet](docs/FIRST_OFFER.md) is complete; 01B discovery and 01C pilot boundaries await user/buyer evidence. Preserve `apps/server/scripts/bulkIngest.ts`. Update status after each packet; commit only owned work locally after complete parts, without pushing. The October 3 planning expansion changes documentation only; no new application checks or acceptance are claimed.
 

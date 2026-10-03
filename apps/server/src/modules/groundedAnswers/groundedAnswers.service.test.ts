@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { hasQuestionEvidence } from './groundedAnswers.evidence'
+import { hasQuestionEvidence, hasQuestionPartEvidence } from './groundedAnswers.evidence'
 
 // Inert settings; no environment files, database, downloads or live providers.
 process.env.DATABASE_URL = 'postgresql://unused:unused@127.0.0.1:1/unused'
@@ -52,6 +52,14 @@ describe('independent evidence eligibility', () => {
     it(question, () => assert.equal(hasQuestionEvidence(question, source.text), expected))
   }
   it('requires whole terms', () => assert.equal(hasQuestionEvidence('port policy', 'Our support policy is documented.'), false))
+  it('documents conservative paraphrase refusal', () => {
+    assert.equal(hasQuestionEvidence('Can employees authenticate through a corporate identity system?', source.text), false)
+  })
+  it('requires coverage of every explicit question part', () => {
+    assert.equal(hasQuestionEvidence('Can customers enable SAML SSO and refunds?', source.text), true)
+    assert.equal(hasQuestionPartEvidence('Can customers enable SAML SSO and refunds?', [source.text]), false)
+    assert.equal(hasQuestionPartEvidence('SAML SSO? Refund policy?', [source.text, 'Our refund policy allows refunds.']), true)
+  })
 })
 describe('grounded answers with offline dependencies', () => {
   it('retains low RRF scores and treats logits as ranks, not confidence', async () => {
@@ -96,5 +104,20 @@ describe('grounded answers with offline dependencies', () => {
     assert.equal((await f.service.answerQuestion({ question: 'refund policy?' }, { organizationId: 'org-b' })).refused, true)
     assert.equal(f.localQueries[0].where.document.organizationId, 'org-b')
     assert.equal(f.localQueries[0].where.document.status, 'COMPLETED')
+  })
+  for (const outage of [false, true]) {
+    it(`refuses partially covered multi-part questions (fallback=${outage})`, async () => {
+      const f = fixture({ outage })
+      const result = await f.service.answerQuestion({ question: 'Can customers enable SAML SSO and refunds?' }, { organizationId: 'org-a' })
+      assert.equal(result.refused, true)
+      assert.equal(f.generations.length, 0)
+    })
+  }
+  it('keeps an explicit document allowlist on fallback', async () => {
+    const f = fixture({ outage: true })
+    await f.service.answerQuestion({ question: 'SAML SSO?', documentIds: ['document-1'] }, { organizationId: 'org-a' })
+    assert.deepEqual(f.localQueries[0].where.document, {
+      organizationId: 'org-a', status: 'COMPLETED', id: { in: ['document-1'] },
+    })
   })
 })

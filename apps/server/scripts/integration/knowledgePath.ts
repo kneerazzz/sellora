@@ -37,9 +37,17 @@ try {
   await client.query('INSERT INTO document_chunks (id,"chunkIndex",text,"tokenCount","documentId",embedding) VALUES ($1,0,$2,5,$3,$4::vector)',
     ['legacy-a', 'Original refund policy text', 'doc-a', legacyVector])
   await client.query(await readFile(`prisma/migrations/${forward}/migration.sql`, 'utf8'))
-  const upgraded = await client.query('SELECT embedding,vector_dims("legacyEmbedding") AS dims FROM document_chunks WHERE id=$1', ['legacy-a'])
+  const upgraded = await client.query('SELECT embedding,vector_dims("legacyEmbedding") AS dims,"legacyEmbedding"::text AS legacy FROM document_chunks WHERE id=$1', ['legacy-a'])
   assert.equal(upgraded.rows[0].embedding, null)
   assert.equal(upgraded.rows[0].dims, 384)
+  assert.equal(upgraded.rows[0].legacy, legacyVector)
+  const columns = await client.query(`SELECT attname,format_type(atttypid,atttypmod) AS type
+    FROM pg_attribute WHERE attrelid='document_chunks'::regclass AND attname IN ('embedding','legacyEmbedding')`)
+  assert.equal(columns.rows.find(row => row.attname === 'embedding')?.type, 'vector(768)')
+  assert.equal(columns.rows.find(row => row.attname === 'legacyEmbedding')?.type, 'vector(384)')
+  const indexes = await client.query("SELECT indexname FROM pg_indexes WHERE tablename='document_chunks'")
+  assert.ok(indexes.rows.some(row => row.indexname === 'document_chunks_pkey'))
+  assert.ok(indexes.rows.some(row => row.indexname === 'document_chunks_documentId_chunkIndex_key'))
   const oldDoc = await prisma.document.findUniqueOrThrow({ where: { id: 'doc-a' } })
   assert.equal(oldDoc.status, 'FAILED')
   assert.equal(oldDoc.storagePath, '/disposable-original-a')
@@ -65,17 +73,28 @@ try {
   assert.ok(matches.every((match) => match.documentId === 'doc-a'))
   assert.deepEqual(await searchSimilarChunks({ organizationId: 'org-a', queryVector: vector, queryText: 'refund policy', documentIds: ['doc-b'] }), [])
   assert.deepEqual(await searchSimilarChunks({ organizationId: 'org-a', queryVector: vector, queryText: 'refund policy', documentIds: [] }), [])
+  await prisma.document.update({ where: { id: 'doc-a' }, data: { status: 'FAILED' } })
+  assert.deepEqual(await searchSimilarChunks({ organizationId: 'org-a', queryVector: vector, queryText: 'refund policy' }), [])
+  await prisma.document.update({ where: { id: 'doc-a' }, data: { status: 'COMPLETED' } })
+  const readyAfterStatusCheck = await prisma.document.findUniqueOrThrow({ where: { id: 'doc-a' } })
   console.log('PASS chunking, atomic persistence, 768-dimensional vector search and organization isolation')
 
   const before = await prisma.documentChunk.findMany({ where: { documentId: 'doc-a' } })
   const vectorsBefore = await client.query('SELECT id, embedding::text FROM document_chunks WHERE "documentId"=$1 ORDER BY id', ['doc-a'])
+  for (const embeddings of [[], [...chunks.map(() => vector), vector]]) {
+    await assert.rejects(prisma.$transaction(tx => persistIngestedChunks(tx,
+      { documentId: 'doc-a', chunks, embeddings, isReingest: true }, upsertChunkEmbeddings)), /Embedding count mismatch/)
+    assert.deepEqual(await prisma.documentChunk.findMany({ where: { documentId: 'doc-a' } }), before)
+    assert.deepEqual(await prisma.document.findUniqueOrThrow({ where: { id: 'doc-a' } }), readyAfterStatusCheck)
+  }
+  console.log('PASS missing/extra vector count rejected before transactional replacement')
   await assert.rejects(prisma.$transaction((tx) => persistIngestedChunks(tx,
     { documentId: 'doc-a', chunks, embeddings: chunks.map(() => vector), isReingest: true },
     async (rows, transaction) => { await upsertChunkEmbeddings(rows, transaction); throw new Error('injected interruption') })), /injected interruption/)
   const after = await prisma.documentChunk.findMany({ where: { documentId: 'doc-a' } })
   assert.deepEqual(after, before)
   assert.deepEqual((await client.query('SELECT id, embedding::text FROM document_chunks WHERE "documentId"=$1 ORDER BY id', ['doc-a'])).rows, vectorsBefore.rows)
-  assert.deepEqual(await prisma.document.findUniqueOrThrow({ where: { id: 'doc-a' } }), ready)
+  assert.deepEqual(await prisma.document.findUniqueOrThrow({ where: { id: 'doc-a' } }), readyAfterStatusCheck)
   console.log('PASS interrupted replacement rolls back chunks and vector writes')
 
   let generations = 0

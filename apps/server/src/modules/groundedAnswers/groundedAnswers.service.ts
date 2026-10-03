@@ -10,7 +10,7 @@ import { getEmbeddings } from '../../utils/embeddings'
 import { hasEmbeddingsConfigured, searchSimilarChunks, VectorSearchResult } from '../../utils/vectorSearch'
 import { rerank } from '../../utils/reranker'
 import { callLlm } from '../../utils/llm'
-import { hasQuestionEvidence } from './groundedAnswers.evidence'
+import { hasQuestionEvidence, hasQuestionPartEvidence } from './groundedAnswers.evidence'
 
 const defaultDependencies = { prisma, getEmbeddings, hasEmbeddingsConfigured, searchSimilarChunks, rerank, callLlm }
 
@@ -64,7 +64,7 @@ export function createGroundedAnswersService(overrides: Partial<typeof defaultDe
 
         const topChunks = rankedResults.map((r) => r.item)
 
-        if (topChunks.length === 0) {
+        if (topChunks.length === 0 || !hasQuestionPartEvidence(input.question, topChunks.map(chunk => chunk.text))) {
           return await handleRefusal(input.question, queryVector, context)
         }
 
@@ -189,7 +189,7 @@ export function createGroundedAnswersService(overrides: Partial<typeof defaultDe
       .sort((a, b) => b.score - a.score)
       .slice(0, maxCitations)
 
-    if (scored.length === 0) {
+    if (scored.length === 0 || !hasQuestionPartEvidence(input.question, scored.map(({ chunk }) => chunk.text))) {
       return await handleRefusal(input.question, [], context)
     }
 
