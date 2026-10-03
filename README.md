@@ -25,9 +25,11 @@ The goal is to try for one paid engagement in roughly two months; the original p
 
 ## Next work
 
-Begin **03A — review retrieval repairs**. [01A's working offer sheet](docs/FIRST_OFFER.md) is complete; 01B discovery and 01C pilot boundaries await user/buyer evidence. Preserve `apps/server/scripts/bulkIngest.ts`. Update status after each packet; commit locally after complete parts, without pushing.
+Begin **03C — ingestion correctness**. 03A/03B have dated local evidence in the operator report; 03C has partial uncommitted work and no recorded acceptance. The local operator plan contains bounded task cards, checks, and the Astra review handoff.
 
-Then: baseline verification → reproducible setup/cleanup → knowledge correctness and access → limits/recovery/usage → document lifecycle and durable review → approved answers/staff UI → one email integration and conditional questionnaires → measured optimization → operations, evaluation, and paid-pilot packaging. The roadmap divides this into 18 parts with dependencies and acceptance gates.
+[01A's working offer sheet](docs/FIRST_OFFER.md) is complete; 01B discovery and 01C pilot boundaries await user/buyer evidence. Preserve `apps/server/scripts/bulkIngest.ts`. Update status after each packet; commit only owned work locally after complete parts, without pushing. The October 3 planning expansion changes documentation only; no new application checks or acceptance are claimed.
+
+Then: complete knowledge correctness and access → limits/recovery/usage → document lifecycle and durable review → approved answers/staff UI → one email integration and conditional questionnaires → measured optimization → operations, evaluation, and paid-pilot packaging. The roadmap divides this into 18 parts with dependencies and acceptance gates.
 
 ## Code map and checks
 
