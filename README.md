@@ -1,6 +1,6 @@
 # Sellora — start here
 
-**Current state:** Parts 00/02/03 complete locally as of **2026-10-03**; 01A scope written, buyer discovery pending. See [baseline evidence](docs/BASELINE.md), [evidence policy](docs/EVIDENCE_POLICY.md) and [development contract](docs/DEVELOPMENT.md).
+**Current state:** Parts 00/02/03 and packet 04A complete locally as of **2026-10-03**; 01A scope written, buyer discovery pending. See [baseline evidence](docs/BASELINE.md), [evidence policy](docs/EVIDENCE_POLICY.md) and [development contract](docs/DEVELOPMENT.md).
 The detailed `PROJECT_REPORT.md` and `SELLORA_BUILD_PLAN.md` are local operator records excluded from Git. This README is the repository restart guide.
 
 ## What we are building
@@ -25,9 +25,11 @@ The goal is to try for one paid engagement in roughly two months; the original p
 
 Part 03 added real authenticated HTTP TXT/Markdown/PDF/DOCX upload/search, duplicate/retry/concurrent conflict, vector/count rejection and SQL rollback acceptance on disposable targets. Server typecheck and 14/14 test files passed; the [26-question synthetic corpus](apps/server/test/fixtures/knowledge/README.md) passed both offline paths. Disposable resources were removed. Authenticated uploads are now locally verified; browser journeys, production workload and live answer quality remain unverified. The [upgrade runbook](docs/KNOWLEDGE_UPGRADE.md) covers supported shapes and rebuild limits. Astra review is pending.
 
+04A passed real HTTP refresh/replay/cookie/expiry/rollback and current-user checks, focused offline client refresh tests, server typecheck and web build. Bootstrap and 401 retries now share one rotation per tab. [Session policy](docs/SESSION_POLICY.md) records logout JWT delay, organization-move revocation requirements and multi-tab limitations. The route authorization matrix and account lifecycle remain open; real browser/production-cookie acceptance was not run.
+
 ## Next work
 
-Begin **04A — session semantics**. Part 03 is complete locally with dated report evidence. The local operator plan contains bounded task cards, checks, and the Astra review handoff.
+Next scheduled packet: **04B — authorization matrix**. The current requested batch completed 03C/03D and optional 04A, then stopped. Review these results with Astra before continuing. The local operator plan contains bounded task cards, checks, and the review handoff.
 
 [01A's working offer sheet](docs/FIRST_OFFER.md) is complete; 01B discovery and 01C pilot boundaries await user/buyer evidence. Preserve `apps/server/scripts/bulkIngest.ts`. Update status after each packet; commit only owned work locally after complete parts, without pushing. The October 3 planning expansion changes documentation only; no new application checks or acceptance are claimed.
 

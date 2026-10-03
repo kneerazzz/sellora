@@ -1,4 +1,4 @@
-import { apiClient } from './client'
+import { apiClient, refreshAccessSession } from './client'
 import type { ApiResponse, AuthUser } from '@/types/api'
 
 export interface LoginPayload {
@@ -47,8 +47,7 @@ export async function logout() {
 }
 
 export async function refreshSession() {
-  const { data } = await apiClient.post<ApiResponse<AuthData>>('/auth/refresh')
-  return data.data
+  return refreshAccessSession()
 }
 
 export async function getMe() {

@@ -50,6 +50,7 @@ try {
   console.log('PASS clean Prisma deployment and repeat deployment')
   run(process.execPath, ['--import', 'tsx', 'scripts/integration/startup.ts'], env)
   run(process.execPath, ['--import', 'tsx', 'scripts/integration/httpKnowledge.ts'], env)
+  run(process.execPath, ['--import', 'tsx', 'scripts/integration/httpSessions.ts'], env)
   run('docker', ['exec', name, 'createdb', '-U', 'sellora_test', 'sellora_test_knowledge'])
   run(process.execPath, ['--import', 'tsx', 'scripts/integration/knowledgePath.ts'], {
     ...env, SELLORA_DISPOSABLE_DATABASE_URL: `${base}/sellora_test_knowledge`,

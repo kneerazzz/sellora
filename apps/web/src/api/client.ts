@@ -1,10 +1,11 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios'
 import type { ApiErrorBody, ApiResponse, AuthUser } from '@/types/api'
 
-const API_URL = import.meta.env.VITE_API_URL ?? '/api/v1'
+const API_URL = import.meta.env?.VITE_API_URL ?? '/api/v1'
 
 let accessToken: string | null = null
-let refreshPromise: Promise<string | null> | null = null
+interface RefreshedSession { user: AuthUser; accessToken: string }
+let refreshPromise: Promise<RefreshedSession> | null = null
 
 export function setAccessToken(token: string | null) {
   accessToken = token
@@ -29,15 +30,19 @@ apiClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   return config
 })
 
-async function refreshAccessToken(): Promise<string | null> {
-  const { data } = await axios.post<ApiResponse<{ user: AuthUser; accessToken: string }>>(
-    `${API_URL}/auth/refresh`,
-    {},
-    { withCredentials: true }
-  )
-  const token = data.data.accessToken
-  setAccessToken(token)
-  return token
+/** Bootstrap and 401 retries share one rotation per browser context. */
+export function refreshAccessSession(): Promise<RefreshedSession> {
+  if (!refreshPromise) {
+    refreshPromise = axios.post<ApiResponse<RefreshedSession>>(
+      `${API_URL}/auth/refresh`, {}, { withCredentials: true }
+    ).then(({ data }) => {
+      setAccessToken(data.data.accessToken)
+      return data.data
+    }).finally(() => {
+      refreshPromise = null
+    })
+  }
+  return refreshPromise
 }
 
 apiClient.interceptors.response.use(
@@ -60,13 +65,7 @@ apiClient.interceptors.response.use(
     originalRequest._retry = true
 
     try {
-      if (!refreshPromise) {
-        refreshPromise = refreshAccessToken().finally(() => {
-          refreshPromise = null
-        })
-      }
-
-      const newToken = await refreshPromise
+      const { accessToken: newToken } = await refreshAccessSession()
       if (!newToken) {
         setAccessToken(null)
         return Promise.reject(error)
