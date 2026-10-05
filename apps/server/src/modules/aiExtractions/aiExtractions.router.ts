@@ -7,7 +7,7 @@ import { rfpExtractionInputSchema } from './rfpExtraction.schema'
 
 export const aiExtractionsRouter = Router()
 
-aiExtractionsRouter.use(authenticateJwtOrApiKey("READ_ONLY"))
+aiExtractionsRouter.use(authenticateJwtOrApiKey('FULL_ACCESS'))
 
 aiExtractionsRouter.post(
   '/sales-event',

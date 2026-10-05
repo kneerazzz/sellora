@@ -208,17 +208,12 @@ async function getSessions(userId: string): Promise<SessionInfo[]> {
  * Ensures the session belongs to the requesting user (prevents IDOR).
  */
 async function revokeSession(userId: string, sessionId: string): Promise<void> {
-  const session = await prisma.refreshToken.findUnique({
-    where: { id: sessionId },
+  const session = await prisma.refreshToken.findFirst({
+    where: { id: sessionId, userId },
   })
 
   if (!session) {
     throw ApiError.notFound('Session not found')
-  }
-
-  // Critical: verify ownership — prevent one user revoking another's session
-  if (session.userId !== userId) {
-    throw ApiError.forbidden('You do not have permission to revoke this session')
   }
 
   if (session.isRevoked) {
@@ -226,7 +221,7 @@ async function revokeSession(userId: string, sessionId: string): Promise<void> {
   }
 
   await prisma.refreshToken.update({
-    where: { id: sessionId },
+    where: { id: sessionId, userId },
     data: { isRevoked: true },
   })
 }

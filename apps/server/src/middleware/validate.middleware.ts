@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express'
 import { z, ZodObject, ZodError } from 'zod'
 import { ApiError } from '../utils/apiError'
+import { assertNoOrganizationOverride } from './organizationBoundary'
 
 /**
  * Validates req.body, req.params, and req.query against a Zod schema.
@@ -18,6 +19,8 @@ export function validate(schema: ZodObject) {
     next: NextFunction
   ): Promise<void> => {
     try {
+      // Multipart fields are available only after the route's upload parser.
+      assertNoOrganizationOverride(req.body)
       const parsed = await schema.parseAsync({
         body: req.body,
         params: req.params,

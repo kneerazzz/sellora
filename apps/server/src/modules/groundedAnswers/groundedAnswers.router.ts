@@ -8,7 +8,7 @@ export const groundedAnswersRouter = Router()
 
 groundedAnswersRouter.post(
   '/',
-  authenticateJwtOrApiKey('READ_ONLY', 'FULL_ACCESS'),
+  authenticateJwtOrApiKey('FULL_ACCESS'),
   validate(groundedAnswerSchema),
   groundedAnswersController.answerQuestion
 )

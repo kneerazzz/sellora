@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import { rejectOrganizationOverride } from '../middleware/organizationBoundary'
 
 // Modules will be imported here as they are built
 import { authRouter } from '../modules/auth/auth.router'
@@ -15,6 +16,8 @@ import { groundedAnswersRouter } from '../modules/groundedAnswers/groundedAnswer
 // import { dealsRouter } from '../modules/deals/deals.router'
 
 export const router = Router()
+
+router.use(rejectOrganizationOverride)
 
 router.use('/auth', authRouter)
 router.use('/users', usersRouter)
