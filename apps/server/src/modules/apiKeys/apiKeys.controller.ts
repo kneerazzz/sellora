@@ -7,7 +7,8 @@ import type { CreateApiKeyInput, ListApiKeysQuery } from './apiKeys.schema'
 const createApiKey = asyncHandler(async (req: Request, res: Response) => {
   const result = await apiKeysService.createApiKey(
     req.body as CreateApiKeyInput,
-    req.user.organizationId
+    req.user.organizationId,
+    req.user.id,
   )
 
   res.status(201).json(

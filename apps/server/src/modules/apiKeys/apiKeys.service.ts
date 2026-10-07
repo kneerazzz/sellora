@@ -27,23 +27,31 @@ function generateApiKey(): string {
 
 async function createApiKey(
   input: CreateApiKeyInput,
-  organizationId: string
+  organizationId: string,
+  actorId: string,
 ): Promise<{ apiKey: ApiKeyPayload; rawKey: string }> {
   if (input.expiresAt && input.expiresAt <= new Date()) {
     throw ApiError.badRequest('API key expiration must be in the future')
   }
 
   const rawKey = generateApiKey()
-  const apiKey = await prisma.apiKey.create({
-    data: {
-      label: input.label,
-      scope: input.scope as ApiKeyScope,
-      expiresAt: input.expiresAt,
-      keyHash: sha256Hex(rawKey),
-      keyPrefix: rawKey.slice(0, 18),
-      organizationId,
-    },
-    select: apiKeySelect,
+  const apiKey = await prisma.$transaction(async tx => {
+    // Serialize credential issuance with staff offboarding. If creation wins,
+    // offboarding revokes the new key; if offboarding wins, this recheck fails.
+    const actors = await tx.$queryRaw<Array<{ id: string }>>`SELECT id FROM users
+      WHERE id=${actorId} AND "organizationId"=${organizationId} AND "isActive"=true FOR UPDATE`
+    if (!actors.length) throw ApiError.forbidden('Account access has changed. Sign in again.')
+    return tx.apiKey.create({
+      data: {
+        label: input.label,
+        scope: input.scope as ApiKeyScope,
+        expiresAt: input.expiresAt,
+        keyHash: sha256Hex(rawKey),
+        keyPrefix: rawKey.slice(0, 18),
+        organizationId,
+      },
+      select: apiKeySelect,
+    })
   })
 
   return { apiKey, rawKey }

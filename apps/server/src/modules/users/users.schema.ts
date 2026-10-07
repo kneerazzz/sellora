@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { passwordSchema } from '../auth/auth.schema'
 
 export const listUsersSchema = z.object({
   query: z.object({
@@ -11,14 +12,7 @@ export const listUsersSchema = z.object({
 export const changePasswordSchema = z.object({
     body: z.object({
         currentPassword: z.string({ error: 'Current password is required'}).min(1),
-        newPassword: z
-        .string({ error: "New Password is required" })
-        .min(8, 'Password must be at least 8 characters')
-        .max(72, 'Password must be at most 72 characters')
-        .regex(
-            /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/,
-            'Password must contain at least one uppercase letter, one lowercase letter, and one number'
-        )
+        newPassword: passwordSchema,
     }).refine(
         (data) => data.currentPassword !== data.newPassword,
         { message: 'New password must be different from current password', path: ['newPassword'] }

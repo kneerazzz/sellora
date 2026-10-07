@@ -1,5 +1,19 @@
 import { z } from 'zod'
 
+export const bcryptPasswordSchema = z
+  .string({ error: 'Password is required' })
+  .min(8, 'Password must be at least 8 characters')
+  .max(72, 'Password must be at most 72 characters')
+  .refine(password => Buffer.byteLength(password, 'utf8') <= 72, {
+    message: 'Password must be at most 72 UTF-8 bytes',
+  })
+
+export const passwordSchema = bcryptPasswordSchema
+  .regex(
+    /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/,
+    'Password must contain at least one uppercase letter, one lowercase letter, and one number'
+  )
+
 export const registerSchema = z.object({
   body: z.object({
     firstName: z
@@ -20,14 +34,7 @@ export const registerSchema = z.object({
       .toLowerCase()
       .trim(),
 
-    password: z
-      .string({ error: 'Password is required' })
-      .min(8, 'Password must be at least 8 characters')
-      .max(72, 'Password must be at most 72 characters')
-      .regex(
-        /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/,
-        'Password must contain at least one uppercase letter, one lowercase letter, and one number'
-      ),
+    password: passwordSchema,
 
     organizationName: z
       .string({ error: 'Organization name is required' })
@@ -76,7 +83,7 @@ export const acceptInviteSchema = z.object({
         token: z.string({ error: 'Invite token is required' }).min(1),
         firstName: z.string({ error: 'First name is required' }).min(2).max(50).trim(),
         lastName: z.string({ error: 'Last name is required' }).min(2).max(50).trim(),
-        password: z.string({ error: 'Password is required' }).min(8).max(72),
+        password: bcryptPasswordSchema,
     })  
 })
 
@@ -86,5 +93,5 @@ export type RefreshInput = z.infer<typeof refreshSchema>['body']
 export type AcceptInviteInput = z.infer<typeof acceptInviteSchema>['body']
 export const resetPasswordSchema = z.object({ body: z.object({
   token: z.string().min(1).max(256),
-  password: z.string().min(8).max(72).regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/),
+  password: passwordSchema,
 }) })

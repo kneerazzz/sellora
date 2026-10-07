@@ -2,9 +2,13 @@ import assert from 'node:assert/strict'
 import { createServer, type Server } from 'node:http'
 import { once } from 'node:events'
 import { execFile } from 'node:child_process'
+import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import { promisify } from 'node:util'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
+import { Client } from 'pg'
 
 const target = process.env.SELLORA_DISPOSABLE_DATABASE_URL
 if (!target) throw new Error('Explicit disposable database required')
@@ -46,6 +50,35 @@ try {
     const data = await response.json()
     assert.equal(response.status, expected, `${method} ${route}: ${data.message}`)
     return { response, data: data.data, message: data.message }
+  }
+  async function waitForUserLockWaiters(expected: number) {
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const rows = await prisma.$queryRaw<Array<{ count: bigint }>>`
+        SELECT count(*)::bigint AS count FROM pg_stat_activity
+        WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%FROM users%FOR UPDATE%'`
+      if (Number(rows[0]!.count) >= expected) return
+      await new Promise(resolve => setTimeout(resolve, 20))
+    }
+    throw new Error(`Expected ${expected} user-row lock waiters`)
+  }
+  async function raceBehindUserLock<T, U>(userId: string, first: () => Promise<T>, second: () => Promise<U>) {
+    const blocker = new Client({ connectionString: target })
+    await blocker.connect()
+    await blocker.query('BEGIN')
+    await blocker.query('SELECT id FROM users WHERE id=$1 FOR UPDATE', [userId])
+    try {
+      const firstResult = first()
+      await waitForUserLockWaiters(1)
+      const secondResult = second()
+      await waitForUserLockWaiters(2)
+      await blocker.query('COMMIT')
+      return await Promise.all([firstResult, secondResult] as const)
+    } catch (error) {
+      await blocker.query('ROLLBACK').catch(() => {})
+      throw error
+    } finally {
+      await blocker.end()
+    }
   }
   // Fresh independent child processes contend on the same PostgreSQL bucket.
   const exec = promisify(execFile)
@@ -99,6 +132,33 @@ try {
   await request('POST', `/users/${other.id}/recovery`, {}, adminToken, 404)
   await request('POST', `/users/${other.id}/deactivate`, {}, adminToken, 404)
   await request('POST', `/users/${admin.id}/deactivate`, {}, adminToken, 403)
+
+  // API-key creation and offboarding serialize on the authenticated actor.
+  // Creation queued first commits a key that the following offboard revokes.
+  const createFirst = await raceBehindUserLock(manager.id,
+    () => fetch(`${base}/api-keys`, { method: 'POST', headers: {
+      authorization: `Bearer ${sign(manager)}`, 'content-type': 'application/json',
+    }, body: JSON.stringify({ label: 'Queued before offboard', scope: 'FULL_ACCESS' }) }),
+    () => fetch(`${base}/users/${manager.id}/deactivate`, { method: 'POST', headers: {
+      authorization: `Bearer ${adminToken}`, 'content-type': 'application/json',
+    }, body: '{}' }))
+  assert.deepEqual(createFirst.map(response => response.status), [201, 200])
+  const createdFirst = await createFirst[0].json() as { data: { apiKey: { id: string } } }
+  assert.equal((await prisma.apiKey.findUniqueOrThrow({ where: { id: createdFirst.data.apiKey.id } })).isActive, false)
+
+  // Offboarding queued first makes the later credential issue recheck fail.
+  const managerAfter = await user('manager-after', 'MANAGER')
+  const offboardFirst = await raceBehindUserLock(managerAfter.id,
+    () => fetch(`${base}/users/${managerAfter.id}/deactivate`, { method: 'POST', headers: {
+      authorization: `Bearer ${adminToken}`, 'content-type': 'application/json',
+    }, body: '{}' }),
+    () => fetch(`${base}/api-keys`, { method: 'POST', headers: {
+      authorization: `Bearer ${sign(managerAfter)}`, 'content-type': 'application/json',
+    }, body: JSON.stringify({ label: 'Queued after offboard', scope: 'FULL_ACCESS' }) }))
+  assert.deepEqual(offboardFirst.map(response => response.status), [200, 403])
+  assert.equal(await prisma.apiKey.count({ where: { organizationId: org.id, label: 'Queued after offboard' } }), 0)
+  console.log('PASS API-key issuance serializes with offboarding in both lock orders')
+
   const issued = (await request('POST', `/users/${staff.id}/recovery`, {}, adminToken, 201)).data
   const storedRecovery = await prisma.passwordRecovery.findFirstOrThrow({ where: { userId: staff.id } })
   assert.notEqual(storedRecovery.tokenHash, issued.token); assert.equal(storedRecovery.tokenHash, sha256Hex(issued.token))
@@ -151,6 +211,80 @@ try {
   await prisma.passwordRecovery.updateMany({ where: { tokenHash: sha256Hex(activeRecovery.token) }, data: { expiresAt: new Date(0) } })
   await request('POST', '/auth/reset-password', { token: activeRecovery.token, password }, '', 400)
   console.log('PASS recovery permission/hash/single-use/reissue/expiry, refresh revocation and cookie/origin contract')
+
+  // Force lifecycle operations into the user-row lock queue. The request that
+  // enters first may issue a session, but the lifecycle winner must revoke it.
+  const resetRacer = await user('reset-racer', 'REP')
+  const resetRecovery = (await request('POST', `/users/${resetRacer.id}/recovery`, {}, adminToken, 201)).data
+  await prisma.refreshToken.create({ data: {
+    userId: resetRacer.id, token: sha256Hex('reset-race-refresh'), expiresAt: new Date(Date.now() + 60_000),
+  } })
+  const resetResults = await raceBehindUserLock(resetRacer.id,
+    () => fetch(`${base}/auth/refresh`, { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ refreshToken: 'reset-race-refresh' }) }),
+    () => fetch(`${base}/auth/reset-password`, { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token: resetRecovery.token, password: newPassword }) }))
+  assert.deepEqual(resetResults.map(response => response.status), [200, 200])
+  assert.equal(await prisma.refreshToken.count({ where: { userId: resetRacer.id, isRevoked: false } }), 0)
+
+  const changeRacer = await user('change-racer', 'REP')
+  await prisma.refreshToken.create({ data: {
+    userId: changeRacer.id, token: sha256Hex('change-race-refresh'), expiresAt: new Date(Date.now() + 60_000),
+  } })
+  const changeResults = await raceBehindUserLock(changeRacer.id,
+    () => fetch(`${base}/auth/refresh`, { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ refreshToken: 'change-race-refresh' }) }),
+    () => fetch(`${base}/users/change-password`, { method: 'PATCH', headers: {
+      authorization: `Bearer ${sign(changeRacer)}`, 'content-type': 'application/json',
+    }, body: JSON.stringify({ currentPassword: password, newPassword }) }))
+  assert.deepEqual(changeResults.map(response => response.status), [200, 200])
+  assert.equal(await prisma.refreshToken.count({ where: { userId: changeRacer.id, isRevoked: false } }), 0)
+
+  const refreshOffboardRacer = await user('refresh-offboard-racer', 'REP')
+  await prisma.refreshToken.create({ data: {
+    userId: refreshOffboardRacer.id, token: sha256Hex('offboard-race-refresh'), expiresAt: new Date(Date.now() + 60_000),
+  } })
+  const refreshOffboard = await raceBehindUserLock(refreshOffboardRacer.id,
+    () => fetch(`${base}/auth/refresh`, { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ refreshToken: 'offboard-race-refresh' }) }),
+    () => fetch(`${base}/users/${refreshOffboardRacer.id}/deactivate`, { method: 'POST', headers: {
+      authorization: `Bearer ${adminToken}`, 'content-type': 'application/json',
+    }, body: '{}' }))
+  assert.deepEqual(refreshOffboard.map(response => response.status), [200, 200])
+  assert.equal(await prisma.refreshToken.count({ where: { userId: refreshOffboardRacer.id, isRevoked: false } }), 0)
+
+  const loginRacer = await user('login-racer', 'REP')
+  const loginOffboard = await raceBehindUserLock(loginRacer.id,
+    () => fetch(`${base}/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: loginRacer.email, password }) }),
+    () => fetch(`${base}/users/${loginRacer.id}/deactivate`, { method: 'POST', headers: {
+      authorization: `Bearer ${adminToken}`, 'content-type': 'application/json',
+    }, body: '{}' }))
+  assert.deepEqual(loginOffboard.map(response => response.status), [200, 200])
+  assert.equal(await prisma.refreshToken.count({ where: { userId: loginRacer.id, isRevoked: false } }), 0)
+  console.log('PASS refresh/login races with reset, password change and offboarding leave no active session')
+
+  const recoveryDir = await mkdtemp(join(tmpdir(), 'sellora-recovery-'))
+  try {
+    const outputFile = join(recoveryDir, 'capability.json')
+    const recoveryRun = await exec(process.execPath, ['--import', 'tsx', 'scripts/accountRecovery.ts', org.id, staff.id, outputFile], {
+      env: { ...process.env, DATABASE_URL: 'postgresql://ambient-target-must-not-be-used.invalid/ignored',
+        SELLORA_ACCOUNT_DATABASE_URL: target }, timeout: 30_000,
+    })
+    const saved = JSON.parse(await readFile(outputFile, 'utf8')) as { token: string; expiresAt: string }
+    assert.ok(saved.token); assert.ok(new Date(saved.expiresAt) > new Date())
+    assert.equal((await stat(outputFile)).mode & 0o777, 0o600)
+    assert.equal(recoveryRun.stdout.includes(saved.token), false)
+    assert.equal(await prisma.passwordRecovery.count({ where: { userId: staff.id, tokenHash: sha256Hex(saved.token) } }), 1)
+    const failedFile = join(recoveryDir, 'failed.json')
+    await assert.rejects(exec(process.execPath, ['--import', 'tsx', 'scripts/accountRecovery.ts', org.id, 'missing-user', failedFile], {
+      env: { ...process.env, SELLORA_ACCOUNT_DATABASE_URL: target }, timeout: 30_000,
+    }))
+    await assert.rejects(stat(failedFile), { code: 'ENOENT' })
+  } finally {
+    await rm(recoveryDir, { recursive: true, force: true })
+  }
+  console.log('PASS break-glass recovery explicit target, 0600 output, no stdout secret and failure cleanup')
 
   const ownKey = await prisma.apiKey.create({ data: { organizationId: org.id, label: 'Offboard', keyPrefix: 'fixture', keyHash: sha256Hex('lifecycle-own-key') } })
   const otherKey = await prisma.apiKey.create({ data: { organizationId: foreign.id, label: 'Retain', keyPrefix: 'fixture', keyHash: sha256Hex('lifecycle-other-key') } })

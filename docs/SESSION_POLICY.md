@@ -1,8 +1,8 @@
 # Staff session contract
 
-This records the current server behavior and the 04A dashboard repair. It is not a
-claim that account lifecycle, every route's permission matrix or deployment-cookie
-topology is complete; those remain 04B/04C. No refresh replay grace period exists.
+This records the current server behavior established by 04A and the completed
+local Part 04 account/browser checks. Production deployment acceptance remains
+separate. No refresh replay grace period exists.
 
 | Event | Server behavior | Client/operator consequence |
 | --- | --- | --- |
@@ -64,7 +64,9 @@ The Docker wrapper creates/owns a new database target, runs `httpSessions.ts` an
 the existing DB refresh-race harness, then removes its container/tmpfs. HTTP tests
 cover cookie/body refresh, single winner/replay, access/refresh expiry, actual
 replacement-insert rollback and retry, current role, inactive/deleted/moved users,
-logout delay and deleted-user cascade. The 04C lifecycle harness adds cookie
-attributes, exact-origin mutation, Fetch Metadata, preflight and cookie-clearing
-assertions. Client adapter tests cover deduplicated bootstrap/401 requests and
-failure/retry. No real browser multi-tab journey or production deployment is claimed.
+logout delay and deleted-user cascade. The 04C lifecycle harness also forces
+refresh/login requests to race reset, password change and offboarding user locks,
+then verifies no replacement session survives. It adds cookie attributes,
+exact-origin mutation, Fetch Metadata, preflight and cookie-clearing assertions.
+Client adapter tests cover deduplicated bootstrap/401 requests and failure/retry.
+No real browser multi-tab journey or production deployment is claimed.

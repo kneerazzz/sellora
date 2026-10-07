@@ -131,5 +131,6 @@ delivery or production deployment is claimed.
 
 Local acceptance on October 5, 2026: typecheck PASS, server tests 14/14 files PASS,
 full disposable suite PASS including 404 authorization HTTP assertions and cleanup.
-Public registration/login/invite capabilities were also exercised. Astra review
-remains pending; Part 04 is incomplete until 04C acceptance.
+Public registration/login/invite capabilities were also exercised. Part 04 later
+completed its local 04C acceptance; Astra review of the completed Part 04 repair
+remains pending.
