@@ -63,6 +63,7 @@ settings into apps started on the host. Secrets below are listed by name only.
 | `DATABASE_URL` | Required PostgreSQL connection with pgvector; choose the target deliberately |
 | `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET` | Required distinct random secrets, at least 32 characters each |
 | `JWT_ACCESS_EXPIRES_IN`, `JWT_REFRESH_EXPIRES_IN` | Defaults 15m / 7d |
+| `AUTH_ATTEMPT_MAX`, `AUTH_ATTEMPT_WINDOW_SECONDS` | Shared database-backed account-attempt boundary; defaults 60 attempts per operation/socket address per 900 seconds. Engineering settings only, not a client allowance |
 | `NODE_ENV`, `PORT` | development/test/production; API defaults to port 4000 |
 | `CLIENT_URL` | Exact dashboard origin for credentialed CORS; local default localhost:3000 |
 | `DOCUMENT_STORAGE_DIR` | Defaults to `uploads/documents` relative to the server working directory; use persistent writable storage for real data |

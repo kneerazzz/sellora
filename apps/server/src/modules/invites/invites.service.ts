@@ -215,13 +215,12 @@ async function revokeInvite(
     throw ApiError.badRequest('Invite is already revoked')
   }
 
-  const updated = await prisma.invite.update({
-    where: { id: inviteId },
+  const updated = await prisma.invite.updateMany({
+    where: { id: inviteId, organizationId, status: { in: ['PENDING', 'EXPIRED'] } },
     data: { status: 'REVOKED' },
-    select: inviteSelect,
   })
-
-  return updated
+  if (updated.count !== 1) throw ApiError.conflict('Invite is no longer available')
+  return prisma.invite.findFirstOrThrow({ where: { id: inviteId, organizationId }, select: inviteSelect })
 }
 
 /**
@@ -252,23 +251,17 @@ async function resendInvite(
   // Revoke old + create fresh in one transaction
   const rawToken = randomHex(32)
 
-  const [, newInvite] = await prisma.$transaction([
-    prisma.invite.update({
-      where: { id: inviteId },
+  const newInvite = await prisma.$transaction(async tx => {
+    const revoked = await tx.invite.updateMany({
+      where: { id: inviteId, organizationId, status: { in: ['PENDING', 'EXPIRED'] } },
       data: { status: 'REVOKED' },
-    }),
-    prisma.invite.create({
-      data: {
-        email: existing.email,
-        role: existing.role,
-        token: rawToken,
-        status: 'PENDING',
-        expiresAt: new Date(Date.now() + INVITE_EXPIRES_MS),
-        organizationId,
-      },
-      select: inviteSelect,
-    }),
-  ])
+    })
+    if (revoked.count !== 1) throw ApiError.conflict('Invite is no longer available')
+    return tx.invite.create({ data: {
+      email: existing.email, role: existing.role, token: rawToken, status: 'PENDING',
+      expiresAt: new Date(Date.now() + INVITE_EXPIRES_MS), organizationId,
+    }, select: inviteSelect })
+  })
 
   const clientUrl = env.CLIENT_URL ?? 'http://localhost:3000'
   const inviteUrl = `${clientUrl}/accept-invite?token=${rawToken}`

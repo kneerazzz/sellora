@@ -1,3 +1,4 @@
+import { accountAttemptLimit } from '../../middleware/accountAttemptLimit'
 import { Router } from "express";
 import { invitesController } from "./invites.controller";
 import { inviteIdParamSchema, inviteTokenParamSchema, listInvitesSchema, createInviteSchema } from "./invites.schema";
@@ -5,6 +6,7 @@ import { validate } from "../../middleware/validate.middleware";
 import { authenticate, authorize } from "../../middleware/auth.middleware";
 
 export const invitesRouter = Router()
+invitesRouter.use(accountAttemptLimit('invites'))
 
 invitesRouter.post(
   '/',

@@ -27,7 +27,12 @@ export async function consumeRefreshToken<T>(
   if (!stored || stored.isRevoked || stored.expiresAt <= now) {
     throw ApiError.unauthorized('Refresh token is invalid, expired or already used. Sign in again.')
   }
-  if (!stored.user.isActive) throw ApiError.forbidden('Account has been deactivated')
+  // Same user-first lock order as recovery/offboarding; a refresh cannot
+  // insert a surviving replacement after those operations revoke sessions.
+  const users = await tx.$queryRaw<User[]>`SELECT * FROM users WHERE id=${stored.userId} FOR UPDATE`
+  const currentUser = users[0]
+  if (!currentUser) throw ApiError.unauthorized('Account no longer exists')
+  if (!currentUser.isActive) throw ApiError.forbidden('Account has been deactivated')
   // PostgreSQL rechecks this condition after concurrent writers release the row lock.
   const consumed = await tx.refreshToken.updateMany({
     where: { id: stored.id, isRevoked: false, expiresAt: { gt: now }, user: { isActive: true } },
@@ -35,5 +40,5 @@ export async function consumeRefreshToken<T>(
   })
   if (consumed.count !== 1) throw ApiError.unauthorized('Refresh token already used or account access changed. Sign in again.')
   // A failed insert rolls back consumption. Replay never revokes the winning session.
-  return { user: stored.user, tokens: await issueReplacement(stored.user, tx) }
+  return { user: currentUser, tokens: await issueReplacement(currentUser, tx) }
 }

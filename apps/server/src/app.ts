@@ -7,6 +7,8 @@ import cookieParser from 'cookie-parser'
 import { errorHandler } from './middleware/error.middleware'
 import { ApiResponse } from './utils/apiResponse'
 import { router } from './routes/index'
+import { browserOrigin } from './middleware/browserOrigin'
+import { env } from './config/env'
 
 export function createApp(): Application {
   const app = express()
@@ -15,7 +17,10 @@ export function createApp(): Application {
   app.use(helmet())
   app.use(
     cors({
-      origin: process.env.CLIENT_URL ?? 'http://localhost:3000',
+      origin(origin, callback) {
+        const allowed = new URL(env.CLIENT_URL).origin
+        callback(null, !origin || origin === allowed)
+      },
       credentials: true,               // allow cookies (refresh token)
     })
   )
@@ -24,13 +29,14 @@ export function createApp(): Application {
   app.use(express.json({ limit: '10mb' }))
   app.use(express.urlencoded({ extended: true }))
   app.use(cookieParser())
+  app.use(browserOrigin)
 
   // "/ route"
 
 
   // ── Logging ───────────────────────────────────────────────────────────────
   if (process.env.NODE_ENV !== 'test') {
-    app.use(morgan('dev'))
+    app.use(morgan(':method :status :response-time ms')) // Never log invite/reset tokens in URLs.
   }
 
   // ── Health check ──────────────────────────────────────────────────────────

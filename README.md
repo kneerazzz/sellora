@@ -1,6 +1,6 @@
 # Sellora — start here
 
-**Current state:** Parts 00/02/03 and packets 04A–04B complete locally as of **2026-10-05**; 01A scope written, buyer discovery pending. See [baseline evidence](docs/BASELINE.md), [evidence policy](docs/EVIDENCE_POLICY.md) and [development contract](docs/DEVELOPMENT.md).
+**Current state:** Parts 00/02/03/04 complete locally as of **2026-10-07**; 01A scope written, buyer discovery pending. See [baseline evidence](docs/BASELINE.md), [evidence policy](docs/EVIDENCE_POLICY.md) and [development contract](docs/DEVELOPMENT.md).
 The detailed `PROJECT_REPORT.md` and `SELLORA_BUILD_PLAN.md` are local operator records excluded from Git. This README is the repository restart guide.
 
 ## What we are building
@@ -29,9 +29,15 @@ Part 03 added real authenticated HTTP TXT/Markdown/PDF/DOCX upload/search, dupli
 
 04B passed the [authorization matrix](docs/AUTHORIZATION.md): all 41 protected routes across seven caller kinds, plus tenant/source/session/public-capability boundaries (404 HTTP assertions). READ_ONLY keys cannot invoke answer/extraction POSTs; body organization overrides are rejected; foreign session IDs return 404. Server typecheck, 14/14 test files and the full disposable suite/cleanup passed. Provider responses were synthetic; no browser/live-provider acceptance or Astra review is claimed.
 
+04C.1 added a PostgreSQL-backed account-attempt limiter shared across processes. Cross-process concurrency, restart persistence, expiry, hashed bucket identity, parallel HTTP 429/Retry-After behavior and forwarding-header spoof resistance passed in the disposable suite. Its 60-attempt/15-minute default is an engineering setting, not a client allowance.
+
+04C.2 passed real invite, recovery, password/session invalidation and staff-offboarding races. [Account operations](docs/ACCOUNT_OPERATIONS.md) documents manual private capability delivery, the no-email boundary and organization-wide API-key rotation during offboarding. The new ADMIN routes deny staff, machine scopes and foreign targets. Email delivery, organization-owner transfer and production browser topology remain unverified.
+
+04C.3 passed the supported local [browser security topology](docs/BROWSER_SECURITY.md): exact-origin credentialed CORS, unsafe cookie Origin/Fetch Metadata enforcement, aligned refresh lifetime, production Secure policy, preflight and matching cookie deletion. Server typecheck, 15/15 test files, web build and the final disposable suite/cleanup passed. Deployed TLS/proxy/domain and real-browser acceptance remain unverified.
+
 ## Next work
 
-Next scheduled packet: **04C.1 — shared account-attempt limiter**, followed by 04C.2 account lifecycle and 04C.3 cookie/CORS/CSRF topology. 04B is verified locally; Astra review remains pending. The local operator plan contains bounded task cards, checks, and the review handoff.
+Next scheduled packet: **05A — provider transport contract**. Part 04 is verified locally; Astra review remains pending. The local operator plan contains bounded task cards, checks, and the review handoff.
 
 [01A's working offer sheet](docs/FIRST_OFFER.md) is complete; 01B discovery and 01C pilot boundaries await user/buyer evidence. Preserve `apps/server/scripts/bulkIngest.ts`. Update status after each packet; commit only owned work locally after complete parts, without pushing. The October 3 planning expansion changes documentation only; no new application checks or acceptance are claimed.
 

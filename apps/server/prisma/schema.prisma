@@ -63,6 +63,7 @@ model User {
   uploadedDocuments Document[]
   assignedLeads     Lead[]          @relation("AssignedRep")
   createdLeads      Lead[]          @relation("LeadCreator")
+  passwordRecoveries PasswordRecovery[]
   refreshTokens     RefreshToken[]
   assignedTasks     Task[]          @relation("TaskAssignee")
   createdTasks      Task[]          @relation("TaskCreator")
@@ -749,4 +750,25 @@ enum SyncStatus {
   SUCCESS
   FAILED
   SKIPPED
+}
+
+model AuthAttemptBucket {
+  key     String   @id
+  count   Int
+  resetAt DateTime
+
+  @@index([resetAt])
+  @@map("auth_attempt_buckets")
+}
+
+model PasswordRecovery {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique
+  userId    String
+  expiresAt DateTime
+  usedAt    DateTime?
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_recoveries")
 }

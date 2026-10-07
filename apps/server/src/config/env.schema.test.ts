@@ -27,7 +27,8 @@ describe('supported startup configuration', () => {
       assert.equal(envSchema.safeParse({ ...required, [field]: undefined }).success, false)
     }
     for (const patch of [{ PORT: '0' }, { PORT: '65536' }, { CLIENT_URL: 'invalid' },
-      { LOCAL_EMBEDDING_SERVICE_URL: 'invalid' }, { DOCUMENT_UPLOAD_MAX_BYTES: '-1' }]) {
+      { LOCAL_EMBEDDING_SERVICE_URL: 'invalid' }, { DOCUMENT_UPLOAD_MAX_BYTES: '-1' },
+      { JWT_REFRESH_EXPIRES_IN: '0d' }, { JWT_REFRESH_EXPIRES_IN: '999999999999999999999d' }]) {
       assert.equal(envSchema.safeParse({ ...required, ...patch }).success, false)
     }
     const result = envSchema.safeParse({ ...required, JWT_ACCESS_SECRET: 'private-short-value' })

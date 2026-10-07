@@ -40,7 +40,7 @@ try {
   const post = (route: string, raw: string, options: { cookie?: boolean; failInsert?: boolean } = {}) => fetch(`${base}/auth/${route}`, {
     method: 'POST', headers: {
       'content-type': 'application/json',
-      ...(options.cookie && { cookie: `refreshToken=${raw}` }),
+      ...(options.cookie && { cookie: `refreshToken=${raw}`, origin: 'http://localhost:3000' }),
       ...(options.failInsert && { 'user-agent': 'session-fixture-fail-insert' }),
     }, body: JSON.stringify(options.cookie ? {} : { refreshToken: raw }), signal: AbortSignal.timeout(30_000),
   })

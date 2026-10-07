@@ -9,23 +9,17 @@ import type {
   AcceptInviteInput,
 } from './auth.schema'
 import { env } from '@/config/env'
+import { refreshCookieOptions } from './cookiePolicy'
 
 // ── Cookie config ─────────────────────────────────────────────────────────────
 
-const REFRESH_COOKIE_OPTIONS = {
-  httpOnly: true,
-  secure: env.NODE_ENV === 'production',
-  sameSite: 'lax' as const,
-  maxAge: 7 * 24 * 60 * 60 * 1000,
-  path: '/api/v1/auth',
-}
+const REFRESH_COOKIE_OPTIONS = refreshCookieOptions(env.NODE_ENV, env.JWT_REFRESH_EXPIRES_IN)
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function extractMeta(req: Request) {
   return {
     ipAddress:
-      (req.headers['x-forwarded-for'] as string)?.split(',')[0].trim() ??
       req.socket.remoteAddress,
     userAgent: req.headers['user-agent'],
   }
@@ -79,7 +73,7 @@ const refresh = asyncHandler(async (req: Request, res: Response) => {
 
 const logout = asyncHandler(async (req: Request, res: Response) => {
   await authService.logout(extractRefreshToken(req))
-  res.clearCookie('refreshToken', { path: '/api/v1/auth' })
+  res.clearCookie('refreshToken', { ...REFRESH_COOKIE_OPTIONS, maxAge: undefined })
   res.status(200).json(ApiResponse.ok('Logged out successfully', null))
 })
 
@@ -90,7 +84,7 @@ const logout = asyncHandler(async (req: Request, res: Response) => {
  */
 const logoutAll = asyncHandler(async (req: Request, res: Response) => {
   const { revokedCount } = await authService.logoutAll(req.user.id)
-  res.clearCookie('refreshToken', { path: '/api/v1/auth' })
+  res.clearCookie('refreshToken', { ...REFRESH_COOKIE_OPTIONS, maxAge: undefined })
   res.status(200).json(
     ApiResponse.ok(`Signed out of ${revokedCount} device(s)`, { revokedCount })
   )

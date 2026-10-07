@@ -1,6 +1,6 @@
 # Route authorization contract
 
-Packet 04B, October 5, 2026. Routes below are relative to `/api/v1`.
+Packet 04B, October 5, 2026; extended for 04C.2 on October 7. Routes below are relative to `/api/v1`.
 Organization authority comes from the current active JWT user or active, unexpired
 API key. A top-level body `organizationId` is rejected with 403, including parsed
 multipart fields. Unknown query fields cannot change organization context. Nested
@@ -29,6 +29,8 @@ route; do not infer new read permissions from its name.
 | GET /users/me | Self | Self | Self | — | — | — |
 | PATCH /users/profile | Self | Self | Self | — | — | — |
 | PATCH /users/change-password | Self | Self | Self | — | — | — |
+| POST /users/:id/recovery | Y | — | — | — | — | — |
+| POST /users/:id/deactivate | Y | — | — | — | — | — |
 | GET /auth/sessions | Self | Self | Self | — | — | — |
 | DELETE /auth/sessions/:id | Self | Self | Self | — | — | — |
 | POST /auth/logout-all | Self | Self | Self | — | — | — |
@@ -82,11 +84,13 @@ workflow history or source knowledge. Invite roles remain MANAGER/REP, never ADM
 | POST /auth/login | Email/password |
 | POST /auth/refresh | Refresh token in body or cookie; see session policy |
 | POST /auth/logout | Refresh token in body or cookie; does not revoke issued JWTs |
+| POST /auth/reset-password | Possession of a short-lived, single-use recovery capability issued by an organization admin or the break-glass operator command |
 | GET /invites/validate/:token | Possession of the invite token; returns its limited recipient/organization metadata |
 | POST /auth/accept-invite | Possession of an eligible invite token |
 
-Account abuse controls, invite races, recovery and production cookie topology
-belong to 04C. Session semantics and actual 04A evidence are in
+Account attempt limits are verified in 04C.1. Invite/recovery/offboarding behavior
+is documented in [ACCOUNT_OPERATIONS.md](ACCOUNT_OPERATIONS.md). Production cookie
+topology remains 04C.3. Session semantics and actual 04A evidence are in
 [SESSION_POLICY.md](SESSION_POLICY.md).
 
 ## Sources and future routes
@@ -120,7 +124,10 @@ foreign joins, body/query/payload spoofing, source allowlists, revoked/expired
 keys and absent future routes. Authentication, HTTP serialization and SQL are
 real; provider responses are synthetic and citation retrieval uses the actual
 local SQL fallback. Existing knowledge-path tests cover actual vector SQL.
-No live provider, browser acceptance or production deployment is claimed.
+The account-lifecycle harness also covers the two new ADMIN-only user routes with
+staff roles, all three valid API-key scopes, unauthenticated/invalid credentials,
+foreign IDs and self-deactivation. No live provider, browser acceptance, email
+delivery or production deployment is claimed.
 
 Local acceptance on October 5, 2026: typecheck PASS, server tests 14/14 files PASS,
 full disposable suite PASS including 404 authorization HTTP assertions and cleanup.

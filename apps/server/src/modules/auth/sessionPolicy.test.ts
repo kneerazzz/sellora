@@ -27,7 +27,7 @@ describe('refresh consumption', () => {
   it('only issues one replacement when two requests read the same active token', async () => {
     let consumed = false
     let issued = 0
-    const tx = { refreshToken: {
+    const tx = { $queryRaw: async () => [user], refreshToken: {
       findUnique: async () => stored,
       updateMany: async (args: any) => {
         assert.equal(args.where.isRevoked, false)
@@ -48,12 +48,12 @@ describe('refresh consumption', () => {
   })
   it('rejects replay and expiration without revoking other sessions', async () => {
     for (const value of [null, { ...stored, isRevoked: true }, { ...stored, expiresAt: new Date(0) }]) {
-      const tx = { refreshToken: { findUnique: async () => value, updateMany: async () => assert.fail('unexpected revoke') } } as unknown as Prisma.TransactionClient
+      const tx = { $queryRaw: async () => [user], refreshToken: { findUnique: async () => value, updateMany: async () => assert.fail('unexpected revoke') } } as unknown as Prisma.TransactionClient
       await assert.rejects(consumeRefreshToken(tx, 'hash', async () => assert.fail('unexpected issue')), { statusCode: 401 })
     }
   })
   it('propagates replacement failure so the outer transaction can roll back', async () => {
-    const tx = { refreshToken: { findUnique: async () => stored, updateMany: async () => ({ count: 1 }) } } as unknown as Prisma.TransactionClient
+    const tx = { $queryRaw: async () => [user], refreshToken: { findUnique: async () => stored, updateMany: async () => ({ count: 1 }) } } as unknown as Prisma.TransactionClient
     await assert.rejects(consumeRefreshToken(tx, 'hash', async () => { throw new Error('insert failed') }), /insert failed/)
   })
 })

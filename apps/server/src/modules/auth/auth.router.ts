@@ -1,4 +1,9 @@
+import { resetPassword } from './accountLifecycle'
+import { resetPasswordSchema } from './auth.schema'
+import { asyncHandler } from '../../utils/asyncHandler'
+import { ApiResponse } from '../../utils/apiResponse'
 import { Router } from 'express'
+import { accountAttemptLimit } from '../../middleware/accountAttemptLimit'
 import { authController } from './auth.controller'
 import { validate } from '../../middleware/validate.middleware'
 import { authenticate } from '../../middleware/auth.middleware'
@@ -11,6 +16,7 @@ export const authRouter = Router()
 // POST /api/v1/auth/register
 authRouter.post(
   '/register',
+  accountAttemptLimit('register'),
   validate(registerSchema),
   authController.register
 )
@@ -18,6 +24,7 @@ authRouter.post(
 // POST /api/v1/auth/login
 authRouter.post(
   '/login',
+  accountAttemptLimit('login'),
   validate(loginSchema),
   authController.login
 )
@@ -26,6 +33,7 @@ authRouter.post(
 // Token can come from httpOnly cookie OR request body
 authRouter.post(
   '/refresh',
+  accountAttemptLimit('refresh'),
   validate(refreshSchema),
   authController.refresh
 )
@@ -33,6 +41,7 @@ authRouter.post(
 // POST /api/v1/auth/logout
 authRouter.post(
   '/logout',
+  accountAttemptLimit('logout'),
   authController.logout
 )
 
@@ -59,6 +68,13 @@ authRouter.delete(
 
 authRouter.post(
     '/accept-invite',
+  accountAttemptLimit('accept-invite'),
     validate(acceptInviteSchema),
     authController.acceptInvite
 )
+// Admin-delivered recovery capability; no public email enumeration endpoint.
+authRouter.post('/reset-password', accountAttemptLimit('reset-password'),
+  validate(resetPasswordSchema), asyncHandler(async (req, res) => {
+    await resetPassword(req.body.token, req.body.password)
+    res.status(200).json(ApiResponse.ok('Password reset. Sign in again.', null))
+  }))

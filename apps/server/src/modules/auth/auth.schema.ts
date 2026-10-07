@@ -84,3 +84,7 @@ export type RegisterInput = z.infer<typeof registerSchema>['body']
 export type LoginInput = z.infer<typeof loginSchema>['body']
 export type RefreshInput = z.infer<typeof refreshSchema>['body']
 export type AcceptInviteInput = z.infer<typeof acceptInviteSchema>['body']
+export const resetPasswordSchema = z.object({ body: z.object({
+  token: z.string().min(1).max(256),
+  password: z.string().min(8).max(72).regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/),
+}) })

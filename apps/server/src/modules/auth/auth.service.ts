@@ -1,3 +1,4 @@
+import { changeStaffPassword } from '../auth/accountLifecycle'
 import type { Prisma } from '@prisma/client'
 import { consumeRefreshToken } from './sessionPolicy'
 import bcrypt from 'bcryptjs'
@@ -18,6 +19,7 @@ import { env } from '@/config/env'
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const BCRYPT_ROUNDS = 12
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync('non-account-timing-placeholder', BCRYPT_ROUNDS)
 const ACCESS_TOKEN_EXPIRES = env.JWT_ACCESS_EXPIRES_IN ?? '15m'
 
 function parseExpiresInToMs(expiresIn: string): number {
@@ -60,12 +62,12 @@ async function register(
     where: { slug: organizationSlug },
   })
   if (existingOrg) {
-    throw ApiError.conflict(`Organization slug "${organizationSlug}" is already taken`)
+    throw ApiError.conflict('Registration is unavailable for these details')
   }
 
   const existingUser = await prisma.user.findUnique({ where: { email } })
   if (existingUser) {
-    throw ApiError.conflict('An account with this email already exists')
+    throw ApiError.conflict('Registration is unavailable for these details')
   }
 
   const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS)
@@ -114,28 +116,21 @@ async function login(
     },
   })
 
-  // Dummy compare — prevents timing-based user enumeration
-  if (!user) {
-    await bcrypt.compare(password, '$2a$12$placeholderfortimingattackprotection000')
+  const isPasswordValid = await bcrypt.compare(password, user?.passwordHash ?? DUMMY_PASSWORD_HASH)
+  if (!user || !user.isActive || !isPasswordValid) {
     throw ApiError.unauthorized('Invalid email or password')
   }
 
-  if (!user.isActive) {
-    throw ApiError.forbidden('Your account has been deactivated. Contact your admin.')
-  }
-
-  const isPasswordValid = await bcrypt.compare(password, user.passwordHash)
-  if (!isPasswordValid) {
-    throw ApiError.unauthorized('Invalid email or password')
-  }
-
-  // Fire-and-forget lastLoginAt update
-  prisma.user
-    .update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
-    .catch(() => {})
-
-  const tokens = await issueTokens(user, meta)
-  return { user: buildAuthUser(user), tokens }
+  return prisma.$transaction(async tx => {
+    const current = await tx.$queryRaw<Array<{ passwordHash: string; isActive: boolean; organizationId: string }>>`
+      SELECT "passwordHash", "isActive", "organizationId" FROM users WHERE id=${user.id} FOR UPDATE`
+    if (!current[0]?.isActive || current[0].passwordHash !== user.passwordHash || current[0].organizationId !== user.organizationId) {
+      throw ApiError.unauthorized('Invalid email or password')
+    }
+    await tx.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
+    const tokens = await issueTokens(user, meta, tx)
+    return { user: buildAuthUser(user), tokens }
+  })
 }
 
 /**
@@ -266,37 +261,7 @@ async function getMe(userId: string): Promise<AuthUser> {
  * Change password — verifies current password, hashes new one,
  * revokes all sessions to force re-login on all devices.
  */
-async function changePassword(
-  userId: string,
-  input: { currentPassword: string; newPassword: string }
-): Promise<void> {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { passwordHash: true },
-  })
-  if (!user) throw ApiError.notFound('User not found')
-
-  const isValid = await bcrypt.compare(input.currentPassword, user.passwordHash)
-  if (!isValid) throw ApiError.badRequest('Current password is incorrect')
-
-  if (input.currentPassword === input.newPassword) {
-    throw ApiError.badRequest('New password must be different from current password')
-  }
-
-  const newHash = await bcrypt.hash(input.newPassword, BCRYPT_ROUNDS)
-
-  await prisma.$transaction([
-    prisma.user.update({
-      where: { id: userId },
-      data: { passwordHash: newHash },
-    }),
-    // Revoke all sessions — security best practice after password change
-    prisma.refreshToken.updateMany({
-      where: { userId },
-      data: { isRevoked: true },
-    }),
-  ])
-}
+const changePassword = changeStaffPassword
 
 /**
  * Update profile fields.
@@ -351,8 +316,8 @@ async function acceptInvite(
 
   if (invite.expiresAt < new Date() || invite.status === 'EXPIRED') {
     // Mark as expired if not already
-    await prisma.invite.update({
-      where: { id: invite.id },
+    await prisma.invite.updateMany({
+      where: { id: invite.id, status: 'PENDING', expiresAt: { lte: new Date() } },
       data: { status: 'EXPIRED' },
     })
     throw ApiError.badRequest('This invite has expired. Request a new one from your admin.')
@@ -370,29 +335,21 @@ async function acceptInvite(
 
   const passwordHash = await bcrypt.hash(input.password, BCRYPT_ROUNDS)
 
-  // Transaction: create user + mark invite as accepted
-  const user = await prisma.$transaction(async (tx) => {
-    const user = await tx.user.create({
-      data: {
-        firstName: input.firstName,
-        lastName: input.lastName,
-        email: invite.email,       // email comes from the invite, not user input
-        passwordHash,
-        role: invite.role,         // role was set by the admin when creating the invite
-        organizationId: invite.organizationId,
-      },
-    })
-
-    await tx.invite.update({
-      where: { id: invite.id },
+  // Claim and account/session creation share one transaction. Revoke/resend
+  // use the same conditional row update, so an invalidated invite cannot win.
+  return prisma.$transaction(async (tx) => {
+    const claimed = await tx.invite.updateMany({
+      where: { id: invite.id, status: 'PENDING', expiresAt: { gt: new Date() } },
       data: { status: 'ACCEPTED' },
     })
-
-    return user
+    if (claimed.count !== 1) throw ApiError.conflict('Invite is no longer available')
+    const user = await tx.user.create({ data: {
+      firstName: input.firstName, lastName: input.lastName, email: invite.email,
+      passwordHash, role: invite.role, organizationId: invite.organizationId,
+    } })
+    const tokens = await issueTokens(user, meta, tx)
+    return { user: buildAuthUser(user), tokens }
   })
-
-  const tokens = await issueTokens(user, meta)
-  return { user: buildAuthUser(user), tokens }
 }
 
 // ── Internal: issue token pair ────────────────────────────────────────────────

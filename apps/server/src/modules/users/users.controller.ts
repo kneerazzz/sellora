@@ -3,6 +3,10 @@ import { userService } from "./users.service"
 import { ChangePasswordInput, ListUsersQuery, UpdateProfileInput } from "./users.schema"
 import { asyncHandler } from "@/utils/asyncHandler"
 import { ApiResponse } from "@/utils/apiResponse"
+import { env } from '@/config/env'
+import { refreshCookieOptions } from '../auth/cookiePolicy'
+
+const REFRESH_COOKIE_OPTIONS = refreshCookieOptions(env.NODE_ENV, env.JWT_REFRESH_EXPIRES_IN)
 
 const listUsers = asyncHandler(async (req: Request, res: Response) => {
   const result = await userService.listUsers(
@@ -29,7 +33,7 @@ const getMe = asyncHandler(async (req: Request, res: Response) => {
 
 const changePassword = asyncHandler(async (req: Request, res: Response) => {
   await userService.changePassword(req.user.id, req.body as ChangePasswordInput)
-  res.clearCookie('refreshToken', { path: '/api/v1/auth' })
+  res.clearCookie('refreshToken', { ...REFRESH_COOKIE_OPTIONS, maxAge: undefined })
   res.status(200).json(
     ApiResponse.ok('Password changed. Please log in again on all devices.', null)
   )

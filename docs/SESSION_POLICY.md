@@ -18,10 +18,10 @@ topology is complete; those remain 04B/04C. No refresh replay grace period exist
 
 The default access lifetime is 15 minutes (`JWT_ACCESS_EXPIRES_IN`). Thus refresh
 revocation alone has up to the remaining configured JWT lifetime of access delay.
-The default stored refresh lifetime is seven days (`JWT_REFRESH_EXPIRES_IN`). The
-controller cookie currently has a fixed seven-day max-age; shorter stored expiry
-still rejects refresh at the server. Production cookie lifetime/topology alignment
-and CORS/CSRF acceptance are 04C, not established by local HTTP assertions.
+The default stored refresh lifetime is seven days (`JWT_REFRESH_EXPIRES_IN`), and
+the refresh cookie uses the same configured lifetime. The supported browser
+topology and local CORS/CSRF acceptance are recorded in
+[BROWSER_SECURITY.md](BROWSER_SECURITY.md).
 
 ## Dashboard refresh behavior
 
@@ -64,6 +64,7 @@ The Docker wrapper creates/owns a new database target, runs `httpSessions.ts` an
 the existing DB refresh-race harness, then removes its container/tmpfs. HTTP tests
 cover cookie/body refresh, single winner/replay, access/refresh expiry, actual
 replacement-insert rollback and retry, current role, inactive/deleted/moved users,
-logout delay and deleted-user cascade. Client adapter tests cover deduplicated
-bootstrap/401 requests and failure/retry. No real provider, browser multi-tab
-journey, production cookie deployment or tenant-wide route matrix is claimed.
+logout delay and deleted-user cascade. The 04C lifecycle harness adds cookie
+attributes, exact-origin mutation, Fetch Metadata, preflight and cookie-clearing
+assertions. Client adapter tests cover deduplicated bootstrap/401 requests and
+failure/retry. No real browser multi-tab journey or production deployment is claimed.

@@ -42,6 +42,7 @@ try {
     SELLORA_DISPOSABLE_DATABASE_URL: `${base}/sellora_test_migrations`,
     JWT_ACCESS_SECRET: 'disposable-access-secret-at-least-32-characters',
     JWT_REFRESH_SECRET: 'disposable-refresh-secret-at-least-32-characters',
+    CLIENT_URL: 'http://localhost:3000', AUTH_ATTEMPT_MAX: '60', AUTH_ATTEMPT_WINDOW_SECONDS: '900',
     EMBEDDING_PROVIDER: 'local', AI_PROVIDER: 'groq', OPENAI_API_KEY: '', GROQ_API_KEY: '',
     LOCAL_EMBEDDING_SERVICE_URL: 'http://127.0.0.1:1',
   }
@@ -52,6 +53,7 @@ try {
   run(process.execPath, ['--import', 'tsx', 'scripts/integration/httpKnowledge.ts'], env)
   run(process.execPath, ['--import', 'tsx', 'scripts/integration/httpSessions.ts'], env)
   run(process.execPath, ['--import', 'tsx', 'scripts/integration/httpAuthorization.ts'], env)
+  run(process.execPath, ['--import', 'tsx', 'scripts/integration/httpAccountLifecycle.ts'], env)
   run('docker', ['exec', name, 'createdb', '-U', 'sellora_test', 'sellora_test_knowledge'])
   run(process.execPath, ['--import', 'tsx', 'scripts/integration/knowledgePath.ts'], {
     ...env, SELLORA_DISPOSABLE_DATABASE_URL: `${base}/sellora_test_knowledge`,

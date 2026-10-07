@@ -1,4 +1,4 @@
-import bcrypt from 'bcryptjs'
+import { changeStaffPassword } from '../auth/accountLifecycle'
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../config/prisma'
 import { ApiError } from '../../utils/apiError'
@@ -10,7 +10,6 @@ import type { ListUsersQuery } from './users.schema'
 
 // ── Constants ─────────────────────────────────────────────────────────────────  
 
-const BCRYPT_ROUNDS = 12
 
 const teamMemberSelect = {
   id: true,
@@ -103,37 +102,7 @@ async function getMe(userId: string): Promise<AuthUser> {
  * Change password — verifies current password, hashes new one,
  * revokes all sessions to force re-login on all devices.
  */
-async function changePassword(
-  userId: string,
-  input: { currentPassword: string; newPassword: string }
-): Promise<void> {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { passwordHash: true },
-  })
-  if (!user) throw ApiError.notFound('User not found')
-
-  const isValid = await bcrypt.compare(input.currentPassword, user.passwordHash)
-  if (!isValid) throw ApiError.badRequest('Current password is incorrect')
-
-  if (input.currentPassword === input.newPassword) {
-    throw ApiError.badRequest('New password must be different from current password')
-  }
-
-  const newHash = await bcrypt.hash(input.newPassword, BCRYPT_ROUNDS)
-
-  await prisma.$transaction([
-    prisma.user.update({
-      where: { id: userId },
-      data: { passwordHash: newHash },
-    }),
-    // Revoke all sessions — security best practice after password change
-    prisma.refreshToken.updateMany({
-      where: { userId },
-      data: { isRevoked: true },
-    }),
-  ])
-}
+const changePassword = changeStaffPassword
 
 /**
  * Update profile fields.
