@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sellora Verification"
+  short_description: "Check packet acceptance and evidence boundaries"
+  default_prompt: "Use $sellora-verification to verify the selected Sellora packet and report actual checks, failures and unrun acceptance criteria."

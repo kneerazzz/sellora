@@ -64,4 +64,9 @@ Root `npm test` runs server tests; `npm run check` runs the four checks above. F
 
 ## Continuity
 
+Project-local [agents and skills](docs/AGENT_WORKFLOW.md) provide packet execution,
+Part 05 provider guidance, verification and read-only review. The guide includes
+copy-paste prompts and role responsibilities. Start with `$sellora-packet-runner`
+for authorized continuation; it follows the current next action and review gates.
+
 Read this file, the local `AGENTS.md`, the selected `SELLORA_BUILD_PLAN.md` packet, and relevant `PROJECT_REPORT.md` issues. Do not load every old summary. The report distinguishes user decisions, recommendations, source findings and verification. Writing a plan does not authorize deployment, purchases, or outreach.

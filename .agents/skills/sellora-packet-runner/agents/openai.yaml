@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sellora Packet Runner"
+  short_description: "Execute the next eligible Sellora packet"
+  default_prompt: "Use $sellora-packet-runner to resolve the next eligible local packet from the current records and complete it within my requested scope."

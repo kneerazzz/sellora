@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sellora Provider Work"
+  short_description: "Bound provider work and preserve honest usage"
+  default_prompt: "Use $sellora-provider-work for the selected Part 05 packet, following its dependencies and deterministic acceptance checks."
