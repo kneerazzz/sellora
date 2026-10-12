@@ -73,6 +73,14 @@ settings into apps started on the host. Secrets below are listed by name only.
 | `AI_PROVIDER` | Generation/extraction: groq (default) or openai |
 | `GROQ_API_KEY`, `GROQ_EXTRACTION_MODEL` | Groq generation credentials/model override |
 | `OPENAI_API_KEY`, `OPENAI_EXTRACTION_MODEL` | OpenAI generation credentials/model override; does not enable OpenAI embeddings |
+| `PROVIDER_OPERATION_TIMEOUT_MS` | Total provider-operation deadline; default 30000 ms, including attempts and backoff |
+| `PROVIDER_MAX_ATTEMPTS` | Total HTTP provider dispatch cap; default 3, maximum 5 |
+| `PROVIDER_RETRY_BASE_DELAY_MS`, `PROVIDER_RETRY_MAX_DELAY_MS` | Exponential retry delay bounds; defaults 250 / 2000 ms; Retry-After must still fit the operation deadline |
+| `PROVIDER_CONCURRENCY_MAX`, `PROVIDER_PERIOD_UNITS_MAX` | Shared organization reservation defaults: 4 active and 1,000,000 engineering units per period; not buyer allowances or currency |
+| `PROVIDER_PERIOD_SECONDS`, `PROVIDER_RESERVATION_TTL_SECONDS` | Reservation period/active-expiry defaults: 3600 / 120 seconds; expired unknown work remains conservatively charged |
+| `PROVIDER_REQUEST_MAX_BYTES`, `PROVIDER_RESPONSE_MAX_BYTES` | Provider HTTP request/streamed-response ceilings; both default to 1 MiB |
+| `PROVIDER_INPUT_MAX_CHARS`, `PROVIDER_QUESTION_MAX` | Provider/local-model text and extracted-question ceilings; defaults 200,000 characters and 50 questions |
+| `DOCUMENT_UPLOAD_MAX_BYTES`, `DOCUMENT_EXTRACTED_MAX_CHARS`, `DOCUMENT_MAX_PAGES` | Upload, parser-expansion and page ceilings; defaults 25 MiB, 1,000,000 characters and 500 pages |
 | `WORKFLOW_WORKER_POLL_INTERVAL_MS`, `WORKFLOW_WORKER_BATCH_SIZE` | Worker controls, defaults 10000 ms / 5; use positive integers |
 | `VITE_API_URL` | Optional dashboard API base, default `/api/v1`; Vite values are public, never secrets |
 
@@ -80,6 +88,13 @@ Extraction's legacy `OPENAI_MODEL`/`GROQ_MODEL` aliases still exist; use the exp
 `*_EXTRACTION_MODEL` names consistently. Provider keys are optional for compile,
 tests and startup; actual generation requires the selected provider configuration.
 Missing provider calls/fallbacks are not proof of answer quality.
+
+Attempt-level accounting, nullable unknown measurements, category separation and
+the current unpriced rate snapshot are documented in [USAGE_ACCOUNTING.md](USAGE_ACCOUNTING.md).
+For the isolated usage-screen browser check, build `apps/web` with
+`VITE_API_URL=/api/v1 npm run build`, then run `node test/usageBrowser.mjs` there.
+It uses headless Firefox and a synthetic loopback API; it does not test a live
+server session or provider.
 
 Development infrastructure: Compose `postgres` uses pgvector/pg15, configured by
 `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_PORT`; `ollama` maps

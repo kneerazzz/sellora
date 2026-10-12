@@ -8,6 +8,7 @@ import {
   MessageSquare,
   Users,
   Workflow,
+  Gauge,
   Zap,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -29,7 +30,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const { user } = useAuth()
   const settingsItems = [
     ...(user?.role === 'ADMIN' || user?.role === 'MANAGER'
-      ? [{ to: '/api-keys', label: 'API Keys', icon: KeyRound }]
+      ? [{ to: '/api-keys', label: 'API Keys', icon: KeyRound }, { to: '/usage', label: 'Usage', icon: Gauge }]
       : []),
     { to: '/team', label: 'Team', icon: Users },
   ]

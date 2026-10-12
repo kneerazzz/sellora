@@ -32,7 +32,9 @@ try {
       VALUES ('user-a',NOW(),'a@test.invalid','unused','A','A','org-a'),('user-b',NOW(),'b@test.invalid','unused','B','B','org-b');
     INSERT INTO documents (id,"updatedAt",filename,"displayName","mimeType","sizeBytes","fileType","storagePath",status,"organizationId","uploadedById","embeddingModel")
       VALUES ('doc-a',NOW(),'a.txt','Policy A','text/plain',10,'TXT','/disposable-original-a','COMPLETED','org-a','user-a','all-minilm'),
-             ('doc-b',NOW(),'b.txt','Policy B','text/plain',10,'TXT','/disposable-original-b','PROCESSING','org-b','user-b','all-minilm');`)
+             ('doc-b',NOW(),'b.txt','Policy B','text/plain',10,'TXT','/disposable-original-b','PROCESSING','org-b','user-b','all-minilm');
+    INSERT INTO ai_interactions (id,type,model,"promptTokens","completionTokens","totalTokens","latencyMs","userPrompt",response,"retrievedChunkIds","organizationId")
+      VALUES ('legacy-ai','CHAT_MESSAGE','legacy-model',9,4,13,25,'legacy','legacy',ARRAY[]::TEXT[],'org-a');`)
   const legacyVector = `[${Array.from({ length: 384 }, () => 0.1).join(',')}]`
   await client.query('INSERT INTO document_chunks (id,"chunkIndex",text,"tokenCount","documentId",embedding) VALUES ($1,0,$2,5,$3,$4::vector)',
     ['legacy-a', 'Original refund policy text', 'doc-a', legacyVector])
@@ -55,6 +57,15 @@ try {
   for (const migration of migrations.filter((name) => name > forward)) {
     await client.query(await readFile(`prisma/migrations/${migration}/migration.sql`, 'utf8'))
   }
+  const legacyUsage = await prisma.usageAttempt.findUniqueOrThrow({
+    where: { traceId_component_attemptNumber: {
+      traceId: 'legacy_trace_legacy-ai', component: 'legacy_ai_interaction', attemptNumber: 1,
+    } },
+  })
+  assert.equal(legacyUsage.measurementStatus, 'UNKNOWN')
+  assert.equal(legacyUsage.totalQuantity, null)
+  assert.equal(legacyUsage.rateVersion, 'legacy-unavailable-v1')
+  console.log('PASS legacy AI usage backfilled as unknown rather than zero')
 
   const { persistIngestedChunks } = await import('../../src/modules/documents/ingestionPersistence')
   const { structureAwareChunk } = await import('../../src/services/document/chunking.service')

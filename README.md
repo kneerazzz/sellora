@@ -18,7 +18,7 @@ The goal is to try for one paid engagement in roughly two months; the original p
 - Committed repairs cover retrieval/refusal, embedding contracts, transactional ingestion, sessions and the staff draft UI. Baseline server checks and frontend production builds passed; see dated evidence below.
 - A forward migration preserves previous vectors and requires explicit re-ingestion; it has not been applied to a client database in this work.
 - The dashboard now has a sourced, editable draft/copy screen. Its edits and review checkbox are session-only; durable approval and approved answers remain missing.
-- Limits, usage accounting, worker recovery, document versions/deletion, integrations, and client operations remain incomplete. The public widget remains outside the first offer because its credential/rendering issues are open.
+- Worker recovery, document versions/deletion, integrations, invoice reconciliation and client operations remain incomplete. The public widget remains outside the first offer because its credential/rendering issues are open.
 - CRM remains a payload preview; saved n8n workflows are not verified production integrations.
 
 **Evidence boundary:** Part 02 passed clean app installs/client generation, server typecheck, 13/13 test files and both frontend builds. Disposable pgvector/pg15 tests passed Prisma deployment/repeat deployment, API health/401 boundary, empty-queue worker startup/shutdown, migration preservation, vector isolation, rollback and refresh races. Test containers/storage were removed; regular services remained. Hosted CI, authenticated upload/browser journeys, worker recovery, provider quality and client acceptance remain unverified.
@@ -35,9 +35,17 @@ Part 03 added real authenticated HTTP TXT/Markdown/PDF/DOCX upload/search, dupli
 
 04C.3 passed the supported local [browser security topology](docs/BROWSER_SECURITY.md): exact-origin credentialed CORS, unsafe cookie Origin/Fetch Metadata enforcement, aligned refresh lifetime, production Secure policy, preflight and matching cookie deletion. Server typecheck, 15/15 test files, web build and the final disposable suite/cleanup passed. Deployed TLS/proxy/domain and real-browser acceptance remain unverified.
 
+05A passed deterministic provider-boundary acceptance: one operation deadline, propagated HTTP/client-disconnect cancellation, capped retries/backoff, typed attempt outcomes and validated generation/extraction/embedding/reranker output. Server typecheck and 21/21 test files passed. Local embedding/reranker SDK work cannot be force-aborted, so Sellora reports that limit and stops waiting; no live provider/model download, usage reconciliation or workload limit is claimed.
+
+05B adds configurable provider I/O, input, upload, extracted-text, page and question ceilings plus real PostgreSQL reservations at shared service boundaries. Two-process concurrency/restart/expiry, unused versus attempted-unknown accounting, and denial-before-work passed. Real HTTP/SQL acceptance proved JWT, FULL_ACCESS API-key and integration-originated internal worker processing share the organization allowance. The defaults are engineering limits, not buyer allowances or billing truth; providers were synthetic and no client workload/browser was used.
+
+05C adds durable organization-scoped usage traces and per-attempt outcomes, including retries, failures, cancellation, nullable unknown quantities and request/run correlation. Legacy AI usage backfills as unknown; local compute, storage, infrastructure, automation and support remain separate categories. The current rate snapshot is unpriced. Server tests and disposable migration/HTTP/SQL checks passed with synthetic providers; no invoice or client workload was measured.
+
+05D adds an ADMIN pause/resume switch and an ADMIN/MANAGER usage view with remaining engineering allowance, unknown measurements, failed/costly work and stored alert events. Shared admission blocks new expensive JWT/API-key/worker work when paused or exhausted. Real disposable HTTP/SQL and cross-process checks plus a headless Firefox journey against a synthetic API passed. The screen is not a customer invoice, and alert delivery remains open.
+
 ## Next work
 
-Next action: **Astra review of the 04C.2 repair**, then **05A — provider transport contract** after that review passes. Part 04 is verified locally. The local operator plan contains bounded task cards, checks, and the review handoff.
+Next action: **Part 05 Astra review, then 06A — workflow state contract**. Packets 05A–05D are verified locally as of **2026-10-12**. A `gpt-6-astra` read-only review accepted the 04C.2 repair on **2026-10-10** with one low-priority break-glass exclusivity regression left as a follow-up. The local operator plan contains bounded task cards and checks.
 
 [01A's working offer sheet](docs/FIRST_OFFER.md) is complete; 01B discovery and 01C pilot boundaries await user/buyer evidence. Preserve `apps/server/scripts/bulkIngest.ts`. Update status after each packet; commit only owned work locally after complete parts, without pushing. The October 3 planning expansion changes documentation only; no new application checks or acceptance are claimed.
 

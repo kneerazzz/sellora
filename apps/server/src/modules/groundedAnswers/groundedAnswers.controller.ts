@@ -4,6 +4,8 @@ import { asyncHandler } from '../../utils/asyncHandler'
 import { ApiError } from '../../utils/apiError'
 import { groundedAnswersService } from './groundedAnswers.service'
 import type { GroundedAnswerInput } from './groundedAnswers.schema'
+import { withClientDisconnectSignal } from '../../services/provider/httpCancellation'
+import { randomUUID } from 'node:crypto'
 
 const answerQuestion = asyncHandler(async (req: Request, res: Response) => {
   const organizationId = req.user?.organizationId ?? req.apiKey?.organizationId
@@ -11,10 +13,14 @@ const answerQuestion = asyncHandler(async (req: Request, res: Response) => {
     throw ApiError.unauthorized('Authentication required')
   }
 
-  const answer = await groundedAnswersService.answerQuestion(req.body as GroundedAnswerInput, {
-    organizationId,
-    userId: req.user?.id,
-  })
+  const answer = await withClientDisconnectSignal(res, signal =>
+    groundedAnswersService.answerQuestion(req.body as GroundedAnswerInput, {
+      organizationId,
+      userId: req.user?.id,
+      signal,
+      requestId: randomUUID(),
+    })
+  )
 
   res.status(200).json(ApiResponse.ok('Grounded answer generated', answer))
 })

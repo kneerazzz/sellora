@@ -18,6 +18,7 @@ if (!['127.0.0.1', 'localhost'].includes(url.hostname) || !url.pathname.startsWi
 const storage = await mkdtemp(path.join(tmpdir(), 'sellora-authz-'))
 Object.assign(process.env, {
   DATABASE_URL: target, NODE_ENV: 'test', DOCUMENT_STORAGE_DIR: storage,
+  DOCUMENT_UPLOAD_MAX_BYTES: '128', PROVIDER_INPUT_MAX_CHARS: '1000', PROVIDER_QUESTION_MAX: '2',
   EMBEDDING_PROVIDER: 'local', LOCAL_EMBEDDING_SERVICE_URL: 'http://127.0.0.1:1',
   AI_PROVIDER: 'openai', OPENAI_API_KEY: 'offline-fixture-only', GROQ_API_KEY: '',
 })
@@ -46,6 +47,7 @@ globalThis.fetch = async (input, init) => {
 }
 const { prisma } = await import('../../src/config/prisma')
 const { sha256Hex } = await import('../../src/utils/crypto')
+const { workflowRunsService } = await import('../../src/modules/workflowRuns/workflowRuns.service')
 let api: Server | undefined
 try {
   assert.equal(await prisma.organization.count({ where: { slug: { startsWith: 'authz-fixture-' } } }), 0)
@@ -146,6 +148,8 @@ try {
     } },
     { method: 'POST', route: `/documents/${ownDoc.id}/ingest-text`, allow: managers, body: { text: 'Refund policy permits refunds within thirty days.' } },
     { method: 'GET', route: '/api-keys', allow: managers },
+    { method: 'GET', route: '/usage/summary', allow: managers },
+    { method: 'PUT', route: '/usage/pause', allow: ['ADMIN'], body: { paused: false } },
     { method: 'POST', route: '/api-keys', allow: managers, status: 201, body: { label: 'Fixture', scope: 'READ_ONLY' } },
     { method: 'DELETE', route: '/api-keys/:id', allow: managers, setup: async () => ({ route: `/api-keys/${(await seedKey()).id}` }) },
     { method: 'GET', route: '/invites', allow: managers },
@@ -215,6 +219,78 @@ try {
     const rfp = await request('POST', '/ai/extractions/rfp', caller.token, { content: 'Synthetic questionnaire for authorization.', documentIds: [otherDoc.id] })
     assert.equal(rfp.results[0].refused, true); assert.deepEqual(rfp.results[0].citations, [])
   }
+  for (const caller of [admin, full]) {
+    const before = providerCalls
+    await request('POST', '/ai/extractions/sales-event', caller.token, {
+      sourceType: 'MANUAL', content: 'x'.repeat(1001),
+    }, 422)
+    await request('POST', '/documents/upload', caller.token, {
+      filename: 'oversized.txt', content: 'x'.repeat(129),
+    }, caller === admin ? 400 : 401)
+    assert.equal(providerCalls, before, 'Input limits must reject before provider work')
+  }
+  const allowanceBlocker = await prisma.workloadReservation.create({ data: {
+    organizationId: org.id, reservationKey: 'authorization-allowance-blocker', operation: 'fixture-blocker',
+    reservedUnits: 1_000_000, expiresAt: new Date(Date.now() + 120_000),
+  } })
+  for (const caller of [admin, full]) {
+    const before = providerCalls
+    await request('POST', '/ai/extractions/sales-event', caller.token, {
+      sourceType: 'MANUAL', content: 'Synthetic sales conversation blocked by shared admission.',
+    }, 429)
+    assert.equal(providerCalls, before, 'Admission denial must happen before provider dispatch')
+  }
+  const workerWebhook = await prisma.webhookEvent.create({ data: {
+    organizationId: org.id, source: 'N8N', eventType: 'EMAIL_RECEIVED', payload: {
+      subject: 'Synthetic integration fixture', body: 'Internal worker request blocked by shared admission.',
+    },
+  } })
+  const workerRun = await prisma.workflowRun.create({ data: {
+    organizationId: org.id, webhookEventId: workerWebhook.id, type: 'SALES_EVENT_EXTRACTION', input: {
+      subject: 'Synthetic integration fixture', body: 'Internal worker request blocked by shared admission.',
+    },
+  } })
+  const callsBeforeWorker = providerCalls
+  await assert.rejects(
+    workflowRunsService.processWorkflowRun({ workflowRunId: workerRun.id, organizationId: org.id, userId: admin.user.id }),
+    (error: any) => error.statusCode === 429
+  )
+  assert.equal(providerCalls, callsBeforeWorker, 'Internal worker denial must happen before provider dispatch')
+  assert.equal((await prisma.workflowRun.findUniqueOrThrow({ where: { id: workerRun.id } })).status, 'FAILED')
+  assert.equal((await prisma.webhookEvent.findUniqueOrThrow({ where: { id: workerWebhook.id } })).status, 'FAILED')
+  await prisma.workloadReservation.update({ where: { id: allowanceBlocker.id }, data: {
+    status: 'RELEASED', actualUnits: 0, measurementStatus: 'MEASURED', completedAt: new Date(),
+  } })
+  const unknownTrace = await prisma.usageTrace.create({ data: {
+    organizationId: org.id, operation: 'summary-unknown-fixture', status: 'FAILED',
+  } })
+  await prisma.usageAttempt.create({ data: {
+    traceId: unknownTrace.id, component: 'generation', attemptNumber: 1,
+    category: 'PROVIDER', provider: 'fixture', model: 'fixture-v1', status: 'FAILED',
+    startedAt: new Date(), measurementStatus: 'UNKNOWN',
+  } })
+  const summary = await request('GET', '/usage/summary', admin.token)
+  assert.ok(summary.unknownAttempts > 0)
+  assert.ok(summary.alerts.some((alert: { kind: string }) => alert.kind === 'ALLOWANCE_EXHAUSTED'))
+  const foreignSummary = await request('GET', '/usage/summary', sign(foreignUser))
+  assert.equal(foreignSummary.unknownAttempts, 0)
+  assert.ok(foreignSummary.failedTraces.every((trace: { id: string }) => !summary.failedTraces.some((own: { id: string }) => own.id === trace.id)))
+  await request('PUT', '/usage/pause', rep.token, { paused: true }, 403)
+  await request('PUT', '/usage/pause', full.token, { paused: true }, 401)
+  await request('PUT', '/usage/pause', admin.token, { paused: true })
+  const pausedBefore = providerCalls
+  await request('POST', '/ai/extractions/sales-event', admin.token, {
+    sourceType: 'MANUAL', content: 'Synthetic sales conversation blocked by pause.',
+  }, 403)
+  await request('POST', '/ai/extractions/sales-event', full.token, {
+    sourceType: 'MANUAL', content: 'Synthetic sales conversation blocked by pause.',
+  }, 403)
+  assert.equal(providerCalls, pausedBefore)
+  assert.equal((await request('GET', '/usage/summary', admin.token)).paused, true)
+  await request('PUT', '/usage/pause', admin.token, { paused: false })
+  assert.equal((await request('GET', '/usage/summary', admin.token)).paused, false)
+  console.log('PASS scoped usage view, alert, authorized pause/resume and pre-dispatch denial')
+  console.log('PASS bounded inputs and shared JWT/API/worker admission before provider work')
   for (const caller of [full, hook]) {
     await request('POST', '/webhooks/manual-question', caller.token, { integrationId: otherIntegration.id, payload: {} }, 404)
     const intake = await request('POST', '/webhooks/manual-question', caller.token, { payload: {
@@ -272,6 +348,9 @@ try {
   assert.equal(registered.user.role, 'ADMIN')
   assert.notEqual(registered.user.organizationId, org.id)
   assert.notEqual(registered.user.organizationId, foreign.id)
+  assert.ok(await prisma.usageTrace.count({ where: { organizationId: org.id, requestId: { not: null } } }) > 0)
+  assert.ok(await prisma.usageTrace.count({ where: { organizationId: org.id, workflowRunId: { not: null } } }) > 0)
+  assert.ok(await prisma.usageAttempt.count({ where: { trace: { organizationId: org.id }, category: 'PROVIDER' } }) > 0)
   console.log(`PASS overrides, key expiry/revocation, public capabilities and absent future routes; ${requests} HTTP assertions total`)
 } finally {
   if (api) { api.closeAllConnections(); await new Promise<void>(resolve => api!.close(() => resolve())) }

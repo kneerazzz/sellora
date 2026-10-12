@@ -11,12 +11,16 @@ import {
   type RfpExtractionInput,
 } from './rfpExtraction.schema'
 import { groundedAnswersService } from '../groundedAnswers/groundedAnswers.service'
+import { withWorkloadReservation } from '../usage/workloadReservations.service'
 
 async function extractSalesEvent(
   input: SalesExtractionInput,
   context: {
     organizationId: string
     userId?: string
+    signal?: AbortSignal
+    requestId?: string
+    workflowRunId?: string
   }
 ): Promise<{ extraction: SalesExtractionOutput; aiInteractionId: string }> {
   const validatedInput = salesExtractionBodySchema.parse(input)
@@ -37,7 +41,17 @@ async function extractSalesEvent(
     if (!deal) throw ApiError.notFound('Deal not found')
   }
 
-  const result = await callLlmForSalesExtraction(validatedInput)
+  const result = await withWorkloadReservation({
+    organizationId: context.organizationId,
+    operation: 'sales_extraction',
+    units: Math.max(1, validatedInput.content.length),
+    requestId: context.requestId,
+    workflowRunId: context.workflowRunId,
+    work: async ({ markAttempted, usageTraceId }) => {
+      markAttempted()
+      return callLlmForSalesExtraction(validatedInput, { signal: context.signal, usage: { traceId: usageTraceId } })
+    },
+  })
 
   const aiInteraction = await prisma.aiInteraction.create({
     data: {
@@ -71,11 +85,24 @@ async function extractAndAnswerRfp(
   context: {
     organizationId: string
     userId?: string
+    signal?: AbortSignal
+    requestId?: string
+    workflowRunId?: string
   }
 ) {
   const validatedInput = rfpExtractionBodySchema.parse(input)
 
-  const result = await callLlmForRfpExtraction(validatedInput)
+  const result = await withWorkloadReservation({
+    organizationId: context.organizationId,
+    operation: 'rfp_extraction',
+    units: Math.max(1, validatedInput.content.length),
+    requestId: context.requestId,
+    workflowRunId: context.workflowRunId,
+    work: async ({ markAttempted, usageTraceId }) => {
+      markAttempted()
+      return callLlmForRfpExtraction(validatedInput, { signal: context.signal, usage: { traceId: usageTraceId } })
+    },
+  })
 
   const aiInteraction = await prisma.aiInteraction.create({
     data: {
@@ -104,6 +131,9 @@ async function extractAndAnswerRfp(
         {
           organizationId: context.organizationId,
           userId: context.userId,
+          signal: context.signal,
+          requestId: context.requestId,
+          workflowRunId: context.workflowRunId,
         }
       )
       answers.push({

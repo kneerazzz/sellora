@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { DocumentStatus, DocumentType } from '@prisma/client'
 import { EMBEDDING_MODEL } from '../../utils/embeddingContract'
+import { env } from '../../config/env'
 
 export const createDocumentSchema = z.object({
   body: z.object({
@@ -8,7 +9,7 @@ export const createDocumentSchema = z.object({
     displayName: z.string().min(1).max(255).trim(),
     description: z.string().max(2000).trim().optional(),
     mimeType: z.string().min(1).max(150).trim(),
-    sizeBytes: z.coerce.number().int().min(0),
+    sizeBytes: z.coerce.number().int().min(0).max(env.DOCUMENT_UPLOAD_MAX_BYTES),
     fileType: z.nativeEnum(DocumentType),
     storagePath: z.string().min(1).max(1000).trim(),
     tags: z.array(z.string().trim().min(1).max(50)).default([]).optional(),
@@ -61,8 +62,8 @@ export const ingestDocumentTextSchema = z.object({
     id: z.string().cuid('Invalid document ID'),
   }),
   body: z.object({
-    text: z.string().min(1),
-    pageCount: z.coerce.number().int().min(1).optional(),
+    text: z.string().min(1).max(env.DOCUMENT_EXTRACTED_MAX_CHARS),
+    pageCount: z.coerce.number().int().min(1).max(env.DOCUMENT_MAX_PAGES).optional(),
     embeddingModel: z.literal(EMBEDDING_MODEL).optional(),
   }),
 })

@@ -51,6 +51,8 @@ route; do not infer new read permissions from its name.
 | GET /api-keys | Y | Y | — | — | — | — |
 | POST /api-keys | Y | Y | — | — | — | — |
 | DELETE /api-keys/:id | Y | Y | — | — | — | — |
+| GET /usage/summary | Y | Y | — | — | — | — |
+| PUT /usage/pause | Y | — | — | — | — | — |
 | GET /invites | Y | Y | — | — | — | — |
 | POST /invites | Y | Y | — | — | — | — |
 | DELETE /invites/:id | Y | Y | — | — | — | — |

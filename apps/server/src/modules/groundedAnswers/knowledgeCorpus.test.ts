@@ -55,6 +55,7 @@ describe('versioned offline knowledge corpus', () => {
           source.status === 'COMPLETED' && (test.documentIds === undefined || test.documentIds.includes(source.id)))
         // Adapters assert requested scope; real SQL/isolation is covered by test:db.
         const service = createGroundedAnswersService({
+          withWorkloadReservation: async ({ work }) => work({ markAttempted() {}, markRefused() {}, usageTraceId: 'trace-test' }),
           prisma: {
             documentChunk: { findMany: async (args: any) => {
               assert.deepEqual(args.where.document, {
@@ -72,7 +73,9 @@ describe('versioned offline knowledge corpus', () => {
           getEmbeddings: async (texts, options) => {
             embeddings++
             assert.deepEqual(texts, [test.question])
-            assert.deepEqual(options, { isQuery: true })
+            assert.equal(options?.isQuery, true)
+            assert.equal(options?.signal, undefined)
+            assert.equal(typeof options?.deadlineAtMs, 'number')
             return [vector]
           },
           searchSimilarChunks: async args => {

@@ -9,6 +9,7 @@ import type {
   MultipartDocumentFieldsInput,
   UploadDocumentInput,
 } from './documents.schema'
+import { randomUUID } from 'node:crypto'
 
 const createDocument = asyncHandler(async (req: Request, res: Response) => {
   const document = await documentsService.createDocument(req.body as CreateDocumentInput, {
@@ -41,6 +42,7 @@ const uploadDocument = asyncHandler(async (req: Request, res: Response) => {
   const document = await documentsService.uploadDocument(req.body as UploadDocumentInput, {
     organizationId: req.user.organizationId,
     userId: req.user.id,
+    requestId: randomUUID(),
   })
 
   res.status(201).json(ApiResponse.created('Document uploaded and ingested', document))
@@ -53,6 +55,7 @@ const uploadMultipartDocument = asyncHandler(async (req: Request, res: Response)
     {
       organizationId: req.user.organizationId,
       userId: req.user.id,
+      requestId: randomUUID(),
     }
   )
 
@@ -72,7 +75,8 @@ const ingestDocumentText = asyncHandler(async (req: Request, res: Response) => {
   const document = await documentsService.ingestDocumentText(
     req.params.id as string,
     req.body as IngestDocumentTextInput,
-    req.user.organizationId
+    req.user.organizationId,
+    { requestId: randomUUID() }
   )
 
   res.status(200).json(ApiResponse.ok('Document ingested', document))

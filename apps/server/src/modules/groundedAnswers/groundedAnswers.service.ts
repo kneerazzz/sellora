@@ -11,21 +11,32 @@ import { hasEmbeddingsConfigured, searchSimilarChunks, VectorSearchResult } from
 import { rerank } from '../../utils/reranker'
 import { callLlm } from '../../utils/llm'
 import { hasQuestionEvidence, hasQuestionPartEvidence } from './groundedAnswers.evidence'
+import { getProviderOperationTimeoutMs } from '../../services/provider/providerPolicy'
+import { ProviderOperationError, type ProviderOperationControls } from '../../services/provider/providerTransport'
+import { withWorkloadReservation } from '../usage/workloadReservations.service'
+import { withUsageTrace } from '../usage/usageLedger.service'
 
-const defaultDependencies = { prisma, getEmbeddings, hasEmbeddingsConfigured, searchSimilarChunks, rerank, callLlm }
+const defaultDependencies = { prisma, getEmbeddings, hasEmbeddingsConfigured, searchSimilarChunks, rerank, callLlm, withWorkloadReservation, withUsageTrace }
 
 // Dependency injection keeps retrieval/refusal regressions offline and deterministic.
 export function createGroundedAnswersService(overrides: Partial<typeof defaultDependencies> = {}) {
-  const { prisma, getEmbeddings, hasEmbeddingsConfigured, searchSimilarChunks, rerank, callLlm } = {
+  const { prisma, getEmbeddings, hasEmbeddingsConfigured, searchSimilarChunks, rerank, callLlm, withWorkloadReservation, withUsageTrace } = {
     ...defaultDependencies, ...overrides,
   }
 
-  async function answerQuestion(
+  type AnswerContext = {
+    organizationId: string
+    userId?: string
+    signal?: AbortSignal
+    requestId?: string
+    workflowRunId?: string
+    usageTraceId?: string
+    markRefused?: () => void
+  }
+
+  async function answerQuestionUnreserved(
     input: GroundedAnswerInput,
-    context: {
-      organizationId: string
-      userId?: string
-    }
+    context: AnswerContext
   ) {
     const maxCitations = input.maxCitations ?? 5
     if (!tokenizeForRetrieval(input.question).length || input.documentIds?.length === 0) {
@@ -33,8 +44,13 @@ export function createGroundedAnswersService(overrides: Partial<typeof defaultDe
     }
 
     if (hasEmbeddingsConfigured()) {
+      const operation: ProviderOperationControls = {
+        signal: context.signal,
+        deadlineAtMs: Date.now() + getProviderOperationTimeoutMs(),
+        ...(context.usageTraceId && { usage: { traceId: context.usageTraceId } }),
+      }
       try {
-        const queryEmbeddings = await getEmbeddings([input.question], { isQuery: true })
+        const queryEmbeddings = await getEmbeddings([input.question], { isQuery: true, ...operation })
         const queryVector = queryEmbeddings[0]
 
         if (!queryVector) {
@@ -60,6 +76,7 @@ export function createGroundedAnswersService(overrides: Partial<typeof defaultDe
           question: input.question,
           getText: (m) => m.text,
           limit: maxCitations,
+          operation,
         })
 
         const topChunks = rankedResults.map((r) => r.item)
@@ -95,6 +112,7 @@ export function createGroundedAnswersService(overrides: Partial<typeof defaultDe
           systemPrompt,
           userPrompt,
           temperature: 0,
+          operation,
         })
 
         const isRefused = !llmResult.text.trim() || llmResult.text.includes(
@@ -146,6 +164,9 @@ export function createGroundedAnswersService(overrides: Partial<typeof defaultDe
           aiInteractionId: aiInteraction.id,
         }
       } catch (error) {
+        if (error instanceof ProviderOperationError && (error.category === 'cancelled' || error.category === 'deadline')) {
+          throw error
+        }
         console.error('Error in pgvector-grounded QA, falling back to local...', error)
       }
     }
@@ -237,11 +258,41 @@ export function createGroundedAnswersService(overrides: Partial<typeof defaultDe
     }
   }
 
+  async function answerQuestion(input: GroundedAnswerInput, context: AnswerContext) {
+    if (!tokenizeForRetrieval(input.question).length || input.documentIds?.length === 0) {
+      if (context.requestId || context.workflowRunId) {
+        return withUsageTrace({
+          organizationId: context.organizationId,
+          operation: 'grounded_answer',
+          requestId: context.requestId,
+          workflowRunId: context.workflowRunId,
+          work: async ({ usageTraceId, markRefused }) => answerQuestionUnreserved(input, {
+            ...context, usageTraceId, markRefused,
+          }),
+        })
+      }
+      return answerQuestionUnreserved(input, context)
+    }
+    const estimatedContextCharacters = (input.maxCitations ?? 5) * 2_000
+    return withWorkloadReservation({
+      organizationId: context.organizationId,
+      operation: 'grounded_answer',
+      units: Math.max(1, input.question.length + estimatedContextCharacters),
+      requestId: context.requestId,
+      workflowRunId: context.workflowRunId,
+      work: async ({ markAttempted, markRefused, usageTraceId }) => {
+        markAttempted()
+        return answerQuestionUnreserved(input, { ...context, markRefused, usageTraceId })
+      },
+    })
+  }
+
   async function handleRefusal(
     question: string,
     queryVector: number[],
-    context: { organizationId: string; userId?: string }
+    context: { organizationId: string; userId?: string; markRefused?: () => void }
   ) {
+    context.markRefused?.()
     const answer = 'I do not have enough grounded document context to answer this question.'
     const aiInteraction = await prisma.aiInteraction.create({
       data: {

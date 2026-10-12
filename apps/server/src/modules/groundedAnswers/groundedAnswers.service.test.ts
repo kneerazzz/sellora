@@ -8,14 +8,16 @@ process.env.REDIS_URL = 'redis://127.0.0.1:1'
 process.env.JWT_ACCESS_SECRET = 'offline-access-secret-32-characters'
 process.env.JWT_REFRESH_SECRET = 'offline-refresh-secret-32-characters'
 const { createGroundedAnswersService } = await import('./groundedAnswers.service')
+const { ProviderOperationError } = await import('../../services/provider/providerTransport')
 const source = {
   chunkId: 'chunk-1', text: 'Enterprise customers can enable SAML SSO using their identity provider.',
   chunkIndex: 0, pageNumber: null, headingPath: [], sectionTitle: null,
   documentId: 'document-1', displayName: 'Security guide', filename: 'security.md', score: 2 / 61,
 }
 function fixture(options: { matches?: typeof source[]; text?: string; outage?: boolean } = {}) {
-  const searches: any[] = [], generations: any[] = [], embeddings: string[][] = [], localQueries: any[] = []
+  const searches: any[] = [], generations: any[] = [], embeddings: string[][] = [], embeddingOptions: any[] = [], rerankOperations: any[] = [], localQueries: any[] = []
   const service = createGroundedAnswersService({
+    withWorkloadReservation: async ({ work }) => work({ markAttempted() {}, markRefused() {}, usageTraceId: 'trace-test' }),
     prisma: {
       aiInteraction: { create: async () => ({ id: 'interaction-1' }) },
       documentChunk: { findMany: async (input: any) => {
@@ -24,19 +26,22 @@ function fixture(options: { matches?: typeof source[]; text?: string; outage?: b
       } },
     } as any,
     hasEmbeddingsConfigured: () => true,
-    getEmbeddings: async (texts) => { embeddings.push(texts); return [[1, 0]] },
+    getEmbeddings: async (texts, operation) => { embeddings.push(texts); embeddingOptions.push(operation); return [[1, 0]] },
     searchSimilarChunks: async (params) => {
       searches.push(params)
       if (options.outage) throw new Error('simulated retrieval outage')
       return options.matches ?? [source]
     },
-    rerank: async ({ items, limit }) => items.slice(0, limit).map(({ item }) => ({ item, combinedScore: 25 })),
+    rerank: async ({ items, limit, operation }) => {
+      rerankOperations.push(operation)
+      return items.slice(0, limit).map(({ item }) => ({ item, combinedScore: 25 }))
+    },
     callLlm: async (params) => {
       generations.push(params)
       return { text: options.text ?? 'Enterprise customers can enable SAML SSO.', model: 'offline-stub', promptTokens: 10, completionTokens: 10, latencyMs: 1 }
     },
   })
-  return { service, searches, generations, embeddings, localQueries }
+  return { service, searches, generations, embeddings, embeddingOptions, rerankOperations, localQueries }
 }
 
 // Approved baseline source expectations; this is not a calibrated acceptance corpus.
@@ -64,7 +69,11 @@ describe('independent evidence eligibility', () => {
 describe('grounded answers with offline dependencies', () => {
   it('retains low RRF scores and treats logits as ranks, not confidence', async () => {
     const f = fixture()
-    const r = await f.service.answerQuestion({ question: 'Do you offer SAML SSO?', documentIds: ['document-1'] }, { organizationId: 'org-a' })
+    const controller = new AbortController()
+    const r = await f.service.answerQuestion(
+      { question: 'Do you offer SAML SSO?', documentIds: ['document-1'] },
+      { organizationId: 'org-a', signal: controller.signal }
+    )
     assert.equal(r.refused, false)
     assert.equal(r.confidence, 'LOW')
     assert.equal(r.reviewRequired, true)
@@ -74,6 +83,16 @@ describe('grounded answers with offline dependencies', () => {
     assert.equal('minScore' in f.searches[0], false)
     assert.deepEqual(f.embeddings, [['Do you offer SAML SSO?']])
     assert.equal(f.generations.length, 1)
+    const deadlines = [
+      f.embeddingOptions[0]?.deadlineAtMs,
+      f.rerankOperations[0]?.deadlineAtMs,
+      f.generations[0]?.operation?.deadlineAtMs,
+    ]
+    assert.ok(deadlines[0] > Date.now())
+    assert.deepEqual(deadlines, [deadlines[0], deadlines[0], deadlines[0]])
+    assert.equal(f.embeddingOptions[0]?.signal, controller.signal)
+    assert.equal(f.rerankOperations[0]?.signal, controller.signal)
+    assert.equal(f.generations[0]?.operation?.signal, controller.signal)
   })
   it('refuses irrelevant neighbors without generation', async () => {
     const f = fixture()
@@ -119,5 +138,26 @@ describe('grounded answers with offline dependencies', () => {
     assert.deepEqual(f.localQueries[0].where.document, {
       organizationId: 'org-a', status: 'COMPLETED', id: { in: ['document-1'] },
     })
+  })
+  it('does not turn provider cancellation or deadline failure into a successful local fallback', async () => {
+    for (const category of ['cancelled', 'deadline'] as const) {
+      const f = fixture()
+      f.service = createGroundedAnswersService({
+        withWorkloadReservation: async ({ work }) => work({ markAttempted() {}, markRefused() {}, usageTraceId: 'trace-test' }),
+        prisma: {
+          aiInteraction: { create: async () => ({ id: 'interaction-1' }) },
+          documentChunk: { findMany: async () => { throw new Error('fallback must not run') } },
+        } as any,
+        hasEmbeddingsConfigured: () => true,
+        getEmbeddings: async () => {
+          throw new ProviderOperationError('provider stopped', category, [], false)
+        },
+      })
+
+      await assert.rejects(
+        f.service.answerQuestion({ question: 'SAML SSO?' }, { organizationId: 'org-a' }),
+        (error: any) => error.category === category
+      )
+    }
   })
 })

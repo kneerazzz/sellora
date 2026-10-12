@@ -23,6 +23,8 @@ import type {
   MultipartDocumentFieldsInput,
   UploadDocumentInput,
 } from './documents.schema'
+import { withWorkloadReservation } from '../usage/workloadReservations.service'
+import { withRecordedUsageAttempt } from '../usage/usageLedger.service'
 
 const documentSelect = {
   id: true,
@@ -59,7 +61,8 @@ type IngestStoredDocumentParams = {
   text: string
   pageCount?: number
   tags?: string[]
-  context: { organizationId: string; userId: string }
+  context: { organizationId: string; userId: string; requestId?: string; workflowRunId?: string }
+  usageTraceId: string
 }
 
 function normalizeMultipartTags(tags: MultipartDocumentFieldsInput['tags']): string[] {
@@ -87,16 +90,31 @@ function normalizeMultipartTags(tags: MultipartDocumentFieldsInput['tags']): str
     .filter(Boolean)
 }
 
+function assertExpandedDocumentLimits(text: string, pageCount?: number) {
+  if (text.length > env.DOCUMENT_EXTRACTED_MAX_CHARS) {
+    throw ApiError.badRequest('Extracted document text exceeds the configured character limit')
+  }
+  if (pageCount !== undefined && pageCount > env.DOCUMENT_MAX_PAGES) {
+    throw ApiError.badRequest('Document page count exceeds the configured limit')
+  }
+}
+
 async function ingestChunks(params: {
   documentId: string
   organizationId: string
   text: string
   pageCount?: number
   isReingest?: boolean
+  usageTraceId: string
 }) {
   const { documentId, text, isReingest } = params
+  assertExpandedDocumentLimits(text, params.pageCount)
 
-  const chunks = await structureAwareChunk(text, { maxTokens: 400, overlapTokens: 100 })
+  const chunks = await withRecordedUsageAttempt({
+    traceId: params.usageTraceId, component: 'document_chunking', category: 'LOCAL_COMPUTE',
+    quantity: text.length, unitType: 'CHARACTERS',
+    work: () => structureAwareChunk(text, { maxTokens: 400, overlapTokens: 100 }),
+  })
   if (chunks.length === 0) {
     throw ApiError.badRequest('Document text did not contain ingestible content')
   }
@@ -115,7 +133,7 @@ async function ingestChunks(params: {
 
   if (useEmbeddings) {
     // Explicitly do not pass { isQuery: true } so the default 'search_document: ' prefix is used
-    embeddings = await getEmbeddings(enrichedChunks.map((c) => c.text))
+    embeddings = await getEmbeddings(enrichedChunks.map((c) => c.text), { usage: { traceId: params.usageTraceId } })
   }
 
   const document = await prisma.$transaction((tx) => persistIngestedChunks(tx, {
@@ -160,6 +178,7 @@ async function createIngestedDocument(params: IngestStoredDocumentParams): Promi
       organizationId: params.context.organizationId,
       text: params.text,
       pageCount: params.pageCount,
+      usageTraceId: params.usageTraceId,
     })
   } catch (error: any) {
     await prisma.document.update({
@@ -175,7 +194,7 @@ async function createIngestedDocument(params: IngestStoredDocumentParams): Promi
 
 async function createDocument(
   input: CreateDocumentInput,
-  context: { organizationId: string; userId: string }
+  context: { organizationId: string; userId: string; requestId?: string; workflowRunId?: string }
 ): Promise<DocumentPayload> {
   return prisma.document.create({
     data: {
@@ -196,7 +215,7 @@ async function createDocument(
 
 async function uploadDocument(
   input: UploadDocumentInput,
-  context: { organizationId: string; userId: string }
+  context: { organizationId: string; userId: string; requestId?: string; workflowRunId?: string }
 ): Promise<DocumentPayload> {
   const inferredFileType = input.fileType ?? inferDocumentType(input.filename, input.mimeType)
 
@@ -207,33 +226,50 @@ async function uploadDocument(
   if (!['TXT', 'MARKDOWN'].includes(inferredFileType)) {
     throw ApiError.badRequest('Upload ingestion currently supports TXT and Markdown files')
   }
+  const decoded = Buffer.from(input.content, input.encoding ?? 'utf8')
+  if (decoded.byteLength > env.DOCUMENT_UPLOAD_MAX_BYTES) throw ApiError.badRequest('Document upload exceeds the configured byte limit')
+  assertExpandedDocumentLimits(decoded.toString('utf8'))
 
-  const stored = await storeTextUpload({
-    input,
+  return withWorkloadReservation({
     organizationId: context.organizationId,
-    storageRoot: env.DOCUMENT_STORAGE_DIR,
-  })
-  return createIngestedDocument({
-    filename: input.filename,
-    displayName: input.displayName ?? input.filename,
-    description: input.description,
-    mimeType: input.mimeType ?? inferMimeType(inferredFileType),
-    sizeBytes: stored.sizeBytes,
-    fileType: inferredFileType,
-    storagePath: stored.storagePath,
-    text: stored.text,
-    tags: input.tags ?? [],
-    context,
+    operation: 'document_ingestion',
+    units: Math.max(1, decoded.byteLength),
+    requestId: context.requestId,
+    workflowRunId: context.workflowRunId,
+    work: async ({ markAttempted, usageTraceId }) => {
+      markAttempted()
+      const stored = await withRecordedUsageAttempt({
+        traceId: usageTraceId, component: 'original_storage', category: 'STORAGE',
+        quantity: decoded.byteLength, unitType: 'BYTES',
+        work: () => storeTextUpload({ input, organizationId: context.organizationId, storageRoot: env.DOCUMENT_STORAGE_DIR }),
+      })
+      return createIngestedDocument({
+        filename: input.filename,
+        displayName: input.displayName ?? input.filename,
+        description: input.description,
+        mimeType: input.mimeType ?? inferMimeType(inferredFileType),
+        sizeBytes: stored.sizeBytes,
+        fileType: inferredFileType,
+        storagePath: stored.storagePath,
+        text: stored.text,
+        tags: input.tags ?? [],
+        context,
+        usageTraceId,
+      })
+    },
   })
 }
 
 async function uploadMultipartDocument(
   file: Express.Multer.File | undefined,
   fields: MultipartDocumentFieldsInput,
-  context: { organizationId: string; userId: string }
+  context: { organizationId: string; userId: string; requestId?: string; workflowRunId?: string }
 ): Promise<DocumentPayload> {
   if (!file) {
     throw ApiError.badRequest('Document file is required')
+  }
+  if (file.size > env.DOCUMENT_UPLOAD_MAX_BYTES || file.buffer.byteLength > env.DOCUMENT_UPLOAD_MAX_BYTES) {
+    throw ApiError.badRequest('Document upload exceeds the configured byte limit')
   }
 
   const inferredFileType = inferDocumentType(file.originalname, file.mimetype)
@@ -242,30 +278,45 @@ async function uploadMultipartDocument(
     throw ApiError.badRequest('Unsupported document type')
   }
 
-  // Parse before writing an original so invalid uploads cannot leave orphan files.
-  const extracted = await extractDocumentText({
-    fileType: inferredFileType,
-    buffer: file.buffer,
-  })
-  const stored = await storeUploadBuffer({
-    filename: file.originalname,
-    buffer: file.buffer,
+  return withWorkloadReservation({
     organizationId: context.organizationId,
-    storageRoot: env.DOCUMENT_STORAGE_DIR,
-  })
+    operation: 'document_ingestion',
+    units: Math.max(1, file.buffer.byteLength),
+    requestId: context.requestId,
+    workflowRunId: context.workflowRunId,
+    work: async ({ markAttempted, usageTraceId }) => {
+      markAttempted()
+      // Parse before writing an original so invalid uploads cannot leave orphan files.
+      const extracted = await withRecordedUsageAttempt({
+        traceId: usageTraceId, component: 'document_parse', category: 'LOCAL_COMPUTE',
+        quantity: file.buffer.byteLength, unitType: 'BYTES',
+        work: () => extractDocumentText({ fileType: inferredFileType, buffer: file.buffer }),
+      })
+      assertExpandedDocumentLimits(extracted.text, extracted.pageCount)
+      const stored = await withRecordedUsageAttempt({
+        traceId: usageTraceId, component: 'original_storage', category: 'STORAGE',
+        quantity: file.buffer.byteLength, unitType: 'BYTES',
+        work: () => storeUploadBuffer({
+          filename: file.originalname, buffer: file.buffer,
+          organizationId: context.organizationId, storageRoot: env.DOCUMENT_STORAGE_DIR,
+        }),
+      })
 
-  return createIngestedDocument({
-    filename: file.originalname,
-    displayName: fields.displayName ?? file.originalname,
-    description: fields.description,
-    mimeType: file.mimetype || inferMimeType(inferredFileType),
-    sizeBytes: stored.sizeBytes,
-    fileType: inferredFileType,
-    storagePath: stored.storagePath,
-    text: extracted.text,
-    pageCount: extracted.pageCount,
-    tags: normalizeMultipartTags(fields.tags),
-    context,
+      return createIngestedDocument({
+        filename: file.originalname,
+        displayName: fields.displayName ?? file.originalname,
+        description: fields.description,
+        mimeType: file.mimetype || inferMimeType(inferredFileType),
+        sizeBytes: stored.sizeBytes,
+        fileType: inferredFileType,
+        storagePath: stored.storagePath,
+        text: extracted.text,
+        pageCount: extracted.pageCount,
+        tags: normalizeMultipartTags(fields.tags),
+        context,
+        usageTraceId,
+      })
+    },
   })
 }
 
@@ -316,8 +367,10 @@ async function getDocumentById(documentId: string, organizationId: string): Prom
 async function ingestDocumentText(
   documentId: string,
   input: IngestDocumentTextInput,
-  organizationId: string
+  organizationId: string,
+  correlation: { requestId?: string; workflowRunId?: string } = {}
 ) {
+  assertExpandedDocumentLimits(input.text, input.pageCount)
   const document = await prisma.document.findFirst({
     where: { id: documentId, organizationId },
     select: { id: true },
@@ -327,35 +380,40 @@ async function ingestDocumentText(
     throw ApiError.notFound('Document not found')
   }
 
-  // One service request owns ingestion until it completes or fails. A competing
-  // request must not overwrite the winner's status or race its chunk replacement.
-  const claimed = await prisma.document.updateMany({
-    where: { id: documentId, organizationId, status: { not: 'PROCESSING' } },
-    data: {
-      status: 'PROCESSING',
-      errorMessage: null,
+  return withWorkloadReservation({
+    organizationId,
+    operation: 'document_ingestion',
+    units: Math.max(1, input.text.length),
+    requestId: correlation.requestId,
+    workflowRunId: correlation.workflowRunId,
+    work: async ({ markAttempted, usageTraceId }) => {
+      // One service request owns ingestion until it completes or fails. A competing
+      // request must not overwrite the winner's status or race its chunk replacement.
+      const claimed = await prisma.document.updateMany({
+        where: { id: documentId, organizationId, status: { not: 'PROCESSING' } },
+        data: { status: 'PROCESSING', errorMessage: null },
+      })
+      if (claimed.count !== 1) throw ApiError.conflict('Document ingestion is already in progress')
+      markAttempted()
+
+      try {
+        return await ingestChunks({
+          documentId,
+          organizationId,
+          text: input.text,
+          pageCount: input.pageCount,
+          isReingest: true,
+          usageTraceId,
+        })
+      } catch (error: any) {
+        await prisma.document.update({
+          where: { id: documentId },
+          data: { status: 'FAILED', errorMessage: error.message || String(error) },
+        })
+        throw error
+      }
     },
   })
-  if (claimed.count !== 1) throw ApiError.conflict('Document ingestion is already in progress')
-
-  try {
-    return await ingestChunks({
-      documentId,
-      organizationId,
-      text: input.text,
-      pageCount: input.pageCount,
-      isReingest: true,
-    })
-  } catch (error: any) {
-    await prisma.document.update({
-      where: { id: documentId },
-      data: {
-        status: 'FAILED',
-        errorMessage: error.message || String(error),
-      },
-    })
-    throw error
-  }
 }
 
 export const documentsService = {

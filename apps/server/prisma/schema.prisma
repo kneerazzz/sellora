@@ -36,6 +36,10 @@ model Organization {
   webhookEvents    WebhookEvent[]
   workflowRuns     WorkflowRun[]
   workflows        WorkflowTrigger[]
+  workloadReservations WorkloadReservation[]
+  usageTraces      UsageTrace[]
+  usageControl     OrganizationUsageControl?
+  usageAlerts      UsageAlertEvent[]
 
   @@map("organizations")
 }
@@ -472,6 +476,7 @@ model WorkflowRun {
   organizationId String
   webhookEventId String?
   syncLogs       SyncLog[]
+  usageTraces    UsageTrace[]
   organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   webhookEvent   WebhookEvent?     @relation(fields: [webhookEventId], references: [id])
 
@@ -759,6 +764,163 @@ model AuthAttemptBucket {
 
   @@index([resetAt])
   @@map("auth_attempt_buckets")
+}
+
+model WorkloadReservation {
+  id                String                       @id @default(cuid())
+  createdAt         DateTime                     @default(now())
+  updatedAt         DateTime                     @updatedAt
+  reservationKey    String
+  operation         String
+  reservedUnits     Int
+  actualUnits       Int?
+  measurementStatus WorkloadMeasurementStatus    @default(ESTIMATED)
+  status            WorkloadReservationStatus    @default(RESERVED)
+  expiresAt         DateTime
+  completedAt       DateTime?
+  organizationId    String
+  organization      Organization                 @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  usageTrace        UsageTrace?
+
+  @@unique([organizationId, reservationKey])
+  @@index([organizationId, status, expiresAt])
+  @@index([organizationId, createdAt])
+  @@map("workload_reservations")
+}
+
+model UsageTrace {
+  id             String            @id @default(cuid())
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  operation      String
+  status         UsageTraceStatus  @default(RUNNING)
+  requestId      String?
+  workflowRunId  String?
+  reservationId  String?           @unique
+  errorCategory  String?
+  startedAt      DateTime          @default(now())
+  completedAt    DateTime?
+  elapsedMs      Int?
+  rateVersion    String            @default("unpriced-v1")
+  currency       String?
+  estimatedCostMicros BigInt?
+  organizationId String
+  attempts       UsageAttempt[]
+  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  workflowRun    WorkflowRun?      @relation(fields: [workflowRunId], references: [id], onDelete: SetNull)
+  reservation    WorkloadReservation? @relation(fields: [reservationId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, requestId])
+  @@index([workflowRunId])
+  @@index([status])
+  @@map("usage_traces")
+}
+
+model UsageAttempt {
+  id                 String                    @id @default(cuid())
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+  component          String
+  attemptNumber      Int
+  category           UsageCostCategory
+  provider           String?
+  model              String?
+  status             UsageAttemptStatus        @default(STARTED)
+  errorCategory      String?
+  httpStatus         Int?
+  retryable          Boolean?
+  cancellationMode   String?
+  startedAt          DateTime
+  completedAt        DateTime?
+  elapsedMs          Int?
+  inputQuantity      Int?
+  outputQuantity     Int?
+  totalQuantity      Int?
+  unitType           UsageUnitType?
+  measurementStatus  WorkloadMeasurementStatus @default(UNKNOWN)
+  rateVersion        String                    @default("unpriced-v1")
+  currency           String?
+  inputRateMicros    BigInt?
+  outputRateMicros   BigInt?
+  estimatedCostMicros BigInt?
+  traceId            String
+  trace              UsageTrace                @relation(fields: [traceId], references: [id], onDelete: Cascade)
+
+  @@unique([traceId, component, attemptNumber])
+  @@index([traceId, createdAt])
+  @@index([category, createdAt])
+  @@index([status])
+  @@map("usage_attempts")
+}
+
+model OrganizationUsageControl {
+  organizationId String @id
+  paused         Boolean @default(false)
+  updatedAt      DateTime @updatedAt
+  updatedById    String?
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("organization_usage_controls")
+}
+
+model UsageAlertEvent {
+  id             String @id @default(cuid())
+  organizationId String
+  kind           String
+  dedupeKey      String
+  createdAt      DateTime @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, dedupeKey])
+  @@index([organizationId, createdAt])
+  @@map("usage_alert_events")
+}
+
+enum WorkloadReservationStatus {
+  RESERVED
+  RELEASED
+  RECONCILED
+  ABANDONED
+}
+
+enum WorkloadMeasurementStatus {
+  ESTIMATED
+  MEASURED
+  UNKNOWN
+}
+
+enum UsageTraceStatus {
+  RUNNING
+  COMPLETED
+  REFUSED
+  FAILED
+  CANCELLED
+}
+
+enum UsageAttemptStatus {
+  STARTED
+  SUCCEEDED
+  FAILED
+  CANCELLED
+  DEADLINE_EXCEEDED
+}
+
+enum UsageCostCategory {
+  PROVIDER
+  LOCAL_COMPUTE
+  STORAGE
+  INFRASTRUCTURE
+  AUTOMATION
+  HUMAN_SUPPORT
+}
+
+enum UsageUnitType {
+  TOKENS
+  CHARACTERS
+  BYTES
+  ITEMS
+  MILLISECONDS
 }
 
 model PasswordRecovery {

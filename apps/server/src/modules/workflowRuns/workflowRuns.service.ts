@@ -189,6 +189,7 @@ async function processWorkflowRun(params: {
         {
           organizationId: params.organizationId,
           userId: params.userId,
+          workflowRunId: workflowRun.id,
         }
       )
 
@@ -243,6 +244,7 @@ async function processWorkflowRun(params: {
     const result = await aiExtractionsService.extractSalesEvent(extractionInput, {
       organizationId: params.organizationId,
       userId: params.userId,
+      workflowRunId: workflowRun.id,
     })
 
     const buyerQuestions = result.extraction.buyerQuestions ?? []
@@ -256,6 +258,7 @@ async function processWorkflowRun(params: {
             {
               organizationId: params.organizationId,
               userId: params.userId,
+              workflowRunId: workflowRun.id,
             }
           )
           groundedAnswers.push({

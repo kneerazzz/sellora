@@ -1,11 +1,18 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import {
+
+Object.assign(process.env, {
+  DATABASE_URL: 'postgresql://unused:unused@127.0.0.1:1/unused',
+  JWT_ACCESS_SECRET: 'offline-access-secret-at-least-32-characters',
+  JWT_REFRESH_SECRET: 'offline-refresh-secret-at-least-32-characters',
+})
+
+const {
   createDocumentSchema,
   ingestDocumentTextSchema,
   multipartDocumentFieldsSchema,
   uploadDocumentSchema,
-} from './documents.schema'
+} = await import('./documents.schema')
 
 describe('documents schemas', () => {
   it('accepts document metadata for an uploaded text file', () => {

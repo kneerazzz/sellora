@@ -9,6 +9,7 @@ import { DraftPage } from '@/pages/DraftPage'
 import { DocumentsPage } from '@/pages/DocumentsPage'
 import { TeamPage } from '@/pages/TeamPage'
 import { WorkflowRunsPage } from '@/pages/WorkflowRunsPage'
+import { UsagePage } from '@/pages/UsagePage'
 
 export default function App() {
   return (
@@ -45,6 +46,7 @@ export default function App() {
             <Route path="documents" element={<DocumentsPage />} />
             <Route path="api-keys" element={<ApiKeysPage />} />
             <Route path="workflow-runs" element={<WorkflowRunsPage />} />
+            <Route path="usage" element={<UsagePage />} />
             <Route path="team" element={<TeamPage />} />
           </Route>
 

@@ -1,5 +1,8 @@
 import { Prisma } from '@prisma/client'
 import { ApiError } from './apiError'
+import { buildProviderTransportOptions, type ProviderCallControls } from '../services/provider/providerPolicy'
+import { requestProviderJson, type ProviderAttemptOutcome } from '../services/provider/providerTransport'
+import { createUsageAttemptObserver, recordUsageQuantities } from '../modules/usage/usageLedger.service'
 import {
   salesExtractionOutputSchema,
   type SalesExtractionInput,
@@ -140,8 +143,70 @@ function parseJsonOutput(rawResponse: string): SalesExtractionOutput {
   return salesExtractionOutputSchema.parse(JSON.parse(withoutFence))
 }
 
+type NormalizedTokenUsage = {
+  promptTokens: number
+  completionTokens: number
+  totalTokens: number
+  measurementStatus: 'MEASURED' | 'UNKNOWN'
+}
+
+function validateTokenUsage(
+  value: unknown,
+  keys: { prompt: string; completion: string; total: string }
+): NormalizedTokenUsage {
+  const usage = (value ?? {}) as Record<string, unknown>
+  const read = (key: string) => {
+    const count = usage[key]
+    if (count === undefined) return 0
+    if (!Number.isInteger(count) || (count as number) < 0) throw new Error(`Invalid ${key} token count`)
+    return count as number
+  }
+  return {
+    promptTokens: read(keys.prompt),
+    completionTokens: read(keys.completion),
+    totalTokens: read(keys.total),
+    measurementStatus: [keys.prompt, keys.completion, keys.total].every(key => usage[key] !== undefined) ? 'MEASURED' : 'UNKNOWN',
+  }
+}
+
+function providerControls(operation: ProviderCallControls | undefined, params: {
+  component: string
+  provider: string
+  model: string
+}): ProviderCallControls | undefined {
+  if (!operation?.usage) return operation
+  return {
+    ...operation,
+    attemptObserver: createUsageAttemptObserver({
+      traceId: operation.usage.traceId,
+      component: params.component,
+      category: 'PROVIDER',
+      provider: params.provider,
+      model: params.model,
+    }),
+  }
+}
+
+async function persistTokenUsage(operation: ProviderCallControls | undefined, component: string,
+  attempts: ProviderAttemptOutcome[], usage: NormalizedTokenUsage) {
+  const successful = [...attempts].reverse().find(attempt => attempt.outcome === 'success')
+  if (!operation?.usage || !successful) return
+  const measured = usage.measurementStatus === 'MEASURED'
+  await recordUsageQuantities({
+    traceId: operation.usage.traceId,
+    component,
+    attemptNumber: successful.attempt,
+    inputQuantity: measured ? usage.promptTokens : null,
+    outputQuantity: measured ? usage.completionTokens : null,
+    totalQuantity: measured ? usage.totalTokens : null,
+    unitType: 'TOKENS',
+    measurementStatus: usage.measurementStatus,
+  })
+}
+
 async function callOpenAiForSalesExtraction(
-  input: SalesExtractionInput
+  input: SalesExtractionInput,
+  operation?: ProviderCallControls
 ): Promise<{
   output: SalesExtractionOutput
   model: string
@@ -150,67 +215,53 @@ async function callOpenAiForSalesExtraction(
   rawResponse: string
   usage: { promptTokens: number; completionTokens: number; totalTokens: number }
   latencyMs: number
+  attempts: ProviderAttemptOutcome[]
 }> {
   const { apiKey, model } = getOpenAiConfig()
   const userPrompt = buildSalesExtractionPrompt(input)
-  const startedAt = Date.now()
-
-  const response = await fetch(OPENAI_RESPONSES_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
+  const result = await requestProviderJson({
+    url: OPENAI_RESPONSES_URL,
+    request: {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        input: [
+          { role: 'system', content: salesExtractionSystemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        text: { format: { type: 'json_schema', name: 'sales_event_extraction', strict: true, schema: salesExtractionJsonSchema } },
+      }),
     },
-    body: JSON.stringify({
-      model,
-      input: [
-        { role: 'system', content: salesExtractionSystemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      text: {
-        format: {
-          type: 'json_schema',
-          name: 'sales_event_extraction',
-          strict: true,
-          schema: salesExtractionJsonSchema,
-        },
-      },
-    }),
+    validate(data) {
+      const rawResponse = extractOutputText(data)
+      if (!rawResponse) throw new Error('OpenAI response did not include output text')
+      const usage = validateTokenUsage((data as any)?.usage, {
+        prompt: 'input_tokens', completion: 'output_tokens', total: 'total_tokens',
+      })
+      return { rawResponse, output: parseJsonOutput(rawResponse), usage }
+    },
+    options: buildProviderTransportOptions(providerControls(operation, { component: 'sales_extraction', provider: 'openai', model })),
   })
-
-  const data = await response.json().catch(() => null)
-  const latencyMs = Date.now() - startedAt
-
-  if (!response.ok) {
-    const message = data?.error?.message ?? 'OpenAI extraction request failed'
-    throw ApiError.internal(message)
-  }
-
-  const rawResponse = extractOutputText(data)
-  if (!rawResponse) {
-    throw ApiError.internal('OpenAI response did not include output text')
-  }
-
-  const output = parseJsonOutput(rawResponse)
-  const usage = data?.usage ?? {}
+  await persistTokenUsage(operation, 'sales_extraction', result.attempts, result.value.usage)
 
   return {
-    output,
+    output: result.value.output,
     model,
     systemPrompt: salesExtractionSystemPrompt,
     userPrompt,
-    rawResponse,
+    rawResponse: result.value.rawResponse,
     usage: {
-      promptTokens: usage.input_tokens ?? 0,
-      completionTokens: usage.output_tokens ?? 0,
-      totalTokens: usage.total_tokens ?? 0,
+      ...result.value.usage,
     },
-    latencyMs,
+    latencyMs: result.elapsedMs,
+    attempts: result.attempts,
   }
 }
 
 async function callGroqForSalesExtraction(
-  input: SalesExtractionInput
+  input: SalesExtractionInput,
+  operation?: ProviderCallControls
 ): Promise<{
   output: SalesExtractionOutput
   model: string
@@ -219,18 +270,13 @@ async function callGroqForSalesExtraction(
   rawResponse: string
   usage: { promptTokens: number; completionTokens: number; totalTokens: number }
   latencyMs: number
+  attempts: ProviderAttemptOutcome[]
 }> {
   const { apiKey, model } = getGroqConfig()
   const userPrompt = buildSalesExtractionPrompt(input)
-  const startedAt = Date.now()
-
-  const response = await fetch(GROQ_CHAT_COMPLETIONS_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
+  const result = await requestProviderJson({
+    url: GROQ_CHAT_COMPLETIONS_URL,
+    request: { method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({
       model,
       messages: [
         {
@@ -245,47 +291,41 @@ async function callGroqForSalesExtraction(
       ],
       temperature: 0,
       response_format: { type: 'json_object' },
-    }),
+    }) },
+    validate(data) {
+      const rawResponse = extractChatCompletionContent(data)
+      if (!rawResponse) throw new Error('Groq response did not include message content')
+      const usage = validateTokenUsage((data as any)?.usage, {
+        prompt: 'prompt_tokens', completion: 'completion_tokens', total: 'total_tokens',
+      })
+      return { rawResponse, output: parseJsonOutput(rawResponse), usage }
+    },
+    options: buildProviderTransportOptions(providerControls(operation, { component: 'sales_extraction', provider: 'groq', model })),
   })
-
-  const data = await response.json().catch(() => null)
-  const latencyMs = Date.now() - startedAt
-
-  if (!response.ok) {
-    const message = data?.error?.message ?? 'Groq extraction request failed'
-    throw ApiError.internal(message)
-  }
-
-  const rawResponse = extractChatCompletionContent(data)
-  if (!rawResponse) {
-    throw ApiError.internal('Groq response did not include message content')
-  }
-
-  const output = parseJsonOutput(rawResponse)
-  const usage = data?.usage ?? {}
+  await persistTokenUsage(operation, 'sales_extraction', result.attempts, result.value.usage)
 
   return {
-    output,
+    output: result.value.output,
     model,
     systemPrompt: salesExtractionSystemPrompt,
     userPrompt,
-    rawResponse,
+    rawResponse: result.value.rawResponse,
     usage: {
-      promptTokens: usage.prompt_tokens ?? 0,
-      completionTokens: usage.completion_tokens ?? 0,
-      totalTokens: usage.total_tokens ?? 0,
+      ...result.value.usage,
     },
-    latencyMs,
+    latencyMs: result.elapsedMs,
+    attempts: result.attempts,
   }
 }
 
 export async function callLlmForSalesExtraction(
-  input: SalesExtractionInput
+  input: SalesExtractionInput,
+  operation?: ProviderCallControls
 ): ReturnType<typeof callOpenAiForSalesExtraction> {
   const provider = getAiProvider()
   return provider === 'openai'
-    ? callOpenAiForSalesExtraction(input)
-    : callGroqForSalesExtraction(input)
+    ? callOpenAiForSalesExtraction(input, operation)
+    : callGroqForSalesExtraction(input, operation)
 }
 
 export function normalizeWebhookPayloadForExtraction(params: {
@@ -388,24 +428,20 @@ function parseRfpJsonOutput(rawResponse: string): RfpExtractionOutput {
 }
 
 async function callOpenAiForRfpExtraction(
-  input: RfpExtractionInput
+  input: RfpExtractionInput,
+  operation?: ProviderCallControls
 ): Promise<{
   output: RfpExtractionOutput
   model: string
   usage: { promptTokens: number; completionTokens: number; totalTokens: number }
   latencyMs: number
+  attempts: ProviderAttemptOutcome[]
 }> {
   const { apiKey, model } = getOpenAiConfig()
   const userPrompt = input.content
-  const startedAt = Date.now()
-
-  const response = await fetch(OPENAI_RESPONSES_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
+  const result = await requestProviderJson({
+    url: OPENAI_RESPONSES_URL,
+    request: { method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({
       model,
       input: [
         { role: 'system', content: rfpExtractionSystemPrompt },
@@ -419,56 +455,45 @@ async function callOpenAiForRfpExtraction(
           schema: rfpExtractionJsonSchema,
         },
       },
-    }),
+    }) },
+    validate(data) {
+      const rawResponse = extractOutputText(data)
+      if (!rawResponse) throw new Error('OpenAI response did not include output text')
+      const usage = validateTokenUsage((data as any)?.usage, {
+        prompt: 'input_tokens', completion: 'output_tokens', total: 'total_tokens',
+      })
+      return { output: parseRfpJsonOutput(rawResponse), usage }
+    },
+    options: buildProviderTransportOptions(providerControls(operation, { component: 'rfp_extraction', provider: 'openai', model })),
   })
-
-  const data = await response.json().catch(() => null)
-  const latencyMs = Date.now() - startedAt
-
-  if (!response.ok) {
-    const message = data?.error?.message ?? 'OpenAI RFP extraction request failed'
-    throw ApiError.internal(message)
-  }
-
-  const rawResponse = extractOutputText(data)
-  if (!rawResponse) {
-    throw ApiError.internal('OpenAI response did not include output text')
-  }
-
-  const output = parseRfpJsonOutput(rawResponse)
-  const usage = data?.usage ?? {}
+  await persistTokenUsage(operation, 'rfp_extraction', result.attempts, result.value.usage)
 
   return {
-    output,
+    output: result.value.output,
     model,
     usage: {
-      promptTokens: usage.input_tokens ?? 0,
-      completionTokens: usage.output_tokens ?? 0,
-      totalTokens: usage.total_tokens ?? 0,
+      ...result.value.usage,
     },
-    latencyMs,
+    latencyMs: result.elapsedMs,
+    attempts: result.attempts,
   }
 }
 
 async function callGroqForRfpExtraction(
-  input: RfpExtractionInput
+  input: RfpExtractionInput,
+  operation?: ProviderCallControls
 ): Promise<{
   output: RfpExtractionOutput
   model: string
   usage: { promptTokens: number; completionTokens: number; totalTokens: number }
   latencyMs: number
+  attempts: ProviderAttemptOutcome[]
 }> {
   const { apiKey, model } = getGroqConfig()
   const userPrompt = input.content
-  const startedAt = Date.now()
-
-  const response = await fetch(GROQ_CHAT_COMPLETIONS_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
+  const result = await requestProviderJson({
+    url: GROQ_CHAT_COMPLETIONS_URL,
+    request: { method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({
       model,
       messages: [
         {
@@ -483,42 +508,36 @@ async function callGroqForRfpExtraction(
       ],
       temperature: 0,
       response_format: { type: 'json_object' },
-    }),
+    }) },
+    validate(data) {
+      const rawResponse = extractChatCompletionContent(data)
+      if (!rawResponse) throw new Error('Groq response did not include message content')
+      const usage = validateTokenUsage((data as any)?.usage, {
+        prompt: 'prompt_tokens', completion: 'completion_tokens', total: 'total_tokens',
+      })
+      return { output: parseRfpJsonOutput(rawResponse), usage }
+    },
+    options: buildProviderTransportOptions(providerControls(operation, { component: 'rfp_extraction', provider: 'groq', model })),
   })
-
-  const data = await response.json().catch(() => null)
-  const latencyMs = Date.now() - startedAt
-
-  if (!response.ok) {
-    const message = data?.error?.message ?? 'Groq RFP extraction request failed'
-    throw ApiError.internal(message)
-  }
-
-  const rawResponse = extractChatCompletionContent(data)
-  if (!rawResponse) {
-    throw ApiError.internal('Groq response did not include message content')
-  }
-
-  const output = parseRfpJsonOutput(rawResponse)
-  const usage = data?.usage ?? {}
+  await persistTokenUsage(operation, 'rfp_extraction', result.attempts, result.value.usage)
 
   return {
-    output,
+    output: result.value.output,
     model,
     usage: {
-      promptTokens: usage.prompt_tokens ?? 0,
-      completionTokens: usage.completion_tokens ?? 0,
-      totalTokens: usage.total_tokens ?? 0,
+      ...result.value.usage,
     },
-    latencyMs,
+    latencyMs: result.elapsedMs,
+    attempts: result.attempts,
   }
 }
 
 export async function callLlmForRfpExtraction(
-  input: RfpExtractionInput
+  input: RfpExtractionInput,
+  operation?: ProviderCallControls
 ): ReturnType<typeof callOpenAiForRfpExtraction> {
   const provider = getAiProvider()
   return provider === 'openai'
-    ? callOpenAiForRfpExtraction(input)
-    : callGroqForRfpExtraction(input)
+    ? callOpenAiForRfpExtraction(input, operation)
+    : callGroqForRfpExtraction(input, operation)
 }

@@ -1,10 +1,11 @@
 import { z } from 'zod'
+import { env } from '../../config/env'
 
 export const confidenceSchema = z.enum(['HIGH', 'MEDIUM', 'LOW'])
 
 export const salesExtractionBodySchema = z.object({
   sourceType: z.enum(['EMAIL', 'CALL_TRANSCRIPT', 'CRM_NOTE', 'MANUAL']),
-  content: z.string().trim().min(20, 'Content must be at least 20 characters'),
+  content: z.string().trim().min(20, 'Content must be at least 20 characters').max(env.PROVIDER_INPUT_MAX_CHARS),
   subject: z.string().trim().max(300).optional(),
   participants: z.array(z.string().trim().min(1)).max(50).default([]).optional(),
   crmContext: z.record(z.string(), z.unknown()).optional(),

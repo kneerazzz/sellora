@@ -13,6 +13,7 @@ import { workflowRunsRouter } from '../modules/workflowRuns/workflowRuns.router'
 import { crmWritebackRouter } from '../modules/crmWriteback/crmWriteback.router'
 import { documentsRouter } from '../modules/documents/documents.router'
 import { groundedAnswersRouter } from '../modules/groundedAnswers/groundedAnswers.router'
+import { usageControlsRouter } from '../modules/usage/usageControls.router'
 // import { dealsRouter } from '../modules/deals/deals.router'
 
 export const router = Router()
@@ -30,6 +31,7 @@ router.use('/workflow-runs', workflowRunsRouter)
 router.use('/crm-writeback', crmWritebackRouter)
 router.use('/documents', documentsRouter)
 router.use('/ai/grounded-answers', groundedAnswersRouter)
+router.use('/usage', usageControlsRouter)
 // router.use('/deals', dealsRouter)
 
 // Placeholder until modules are built
