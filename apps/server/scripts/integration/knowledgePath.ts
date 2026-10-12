@@ -55,8 +55,23 @@ try {
   assert.equal(oldDoc.storagePath, '/disposable-original-a')
   console.log('PASS historical migration replay and non-destructive forward upgrade')
   for (const migration of migrations.filter((name) => name > forward)) {
+    if (migration === '20261012031000_workflow_state_contract') {
+      await client.query(`INSERT INTO workflow_runs
+        (id,"updatedAt",type,status,input,"organizationId") VALUES
+        ('legacy-review',NOW(),'GROUNDED_TECHNICAL_ANSWER','NEEDS_REVIEW','{}','org-a'),
+        ('legacy-failed',NOW(),'SALES_EVENT_EXTRACTION','FAILED','{}','org-a')`)
+    }
     await client.query(await readFile(`prisma/migrations/${migration}/migration.sql`, 'utf8'))
   }
+  const legacyReview = await prisma.workflowRun.findUniqueOrThrow({ where: { id: 'legacy-review' } })
+  assert.equal(legacyReview.status, 'COMPLETED')
+  assert.equal(legacyReview.reviewStatus, 'REQUIRED')
+  assert.equal(legacyReview.deliveryStatus, 'NOT_REQUESTED')
+  assert.ok(legacyReview.completedAt)
+  const legacyFailed = await prisma.workflowRun.findUniqueOrThrow({ where: { id: 'legacy-failed' } })
+  assert.equal(legacyFailed.status, 'FAILED')
+  assert.ok(legacyFailed.completedAt)
+  console.log('PASS legacy workflow review/failure state preserved with separate review and delivery')
   const legacyUsage = await prisma.usageAttempt.findUniqueOrThrow({
     where: { traceId_component_attemptNumber: {
       traceId: 'legacy_trace_legacy-ai', component: 'legacy_ai_interaction', attemptNumber: 1,

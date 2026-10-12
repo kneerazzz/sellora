@@ -7,6 +7,8 @@ import { aiExtractionsService } from '../aiExtractions/aiExtractions.service'
 import { groundedAnswersService } from '../groundedAnswers/groundedAnswers.service'
 import type { PaginatedResult } from '../../types/pagination.types'
 import type { ListWorkflowRunsQuery } from './workflowRuns.schema'
+import { ProviderOperationError } from '../../services/provider/providerTransport'
+import { claimWorkflow, finalizeWorkflow, heartbeatWorkflow, retryDelayMs, workflowLeasePolicy, type WorkflowClaim } from './workflowLease'
 
 const workflowRunListSelect = {
   id: true,
@@ -14,10 +16,16 @@ const workflowRunListSelect = {
   updatedAt: true,
   type: true,
   status: true,
+  reviewStatus: true,
+  deliveryStatus: true,
   confidence: true,
   startedAt: true,
   completedAt: true,
   errorMessage: true,
+  attemptCount: true,
+  maxAttempts: true,
+  nextAttemptAt: true,
+  leaseExpiresAt: true,
   organizationId: true,
   webhookEventId: true,
   webhookEvent: {
@@ -106,15 +114,11 @@ async function getWorkflowRunById(
   return workflowRun
 }
 
-async function processWorkflowRun(params: {
-  workflowRunId: string
-  organizationId: string
-  userId?: string
-}) {
+async function processClaimedWorkflowRun(claim: WorkflowClaim, userId?: string, signal?: AbortSignal) {
   const workflowRun = await prisma.workflowRun.findFirst({
     where: {
-      id: params.workflowRunId,
-      organizationId: params.organizationId,
+      id: claim.id,
+      organizationId: claim.organizationId,
     },
     include: {
       webhookEvent: {
@@ -127,41 +131,17 @@ async function processWorkflowRun(params: {
     },
   })
 
-  if (!workflowRun) {
-    throw ApiError.notFound('Workflow run not found')
-  }
-
-  if (workflowRun.status === 'COMPLETED') {
-    return getWorkflowRunById(workflowRun.id, params.organizationId)
-  }
-
-  if (workflowRun.status === 'RUNNING') {
-    return getWorkflowRunById(workflowRun.id, params.organizationId)
-  }
-
-  if (
-    workflowRun.type !== 'SALES_EVENT_EXTRACTION' &&
-    workflowRun.type !== 'GROUNDED_TECHNICAL_ANSWER'
-  ) {
-    throw ApiError.badRequest(`Workflow type ${workflowRun.type} is not supported yet`)
-  }
-
-  const claimed = await prisma.workflowRun.updateMany({
-    where: {
-      id: workflowRun.id,
-      organizationId: params.organizationId,
-      status: { notIn: ['COMPLETED', 'RUNNING'] },
-    },
-    data: {
-      status: 'RUNNING',
-      startedAt: new Date(),
-      errorMessage: null,
-    },
-  })
-
-  if (claimed.count === 0) {
-    return getWorkflowRunById(workflowRun.id, params.organizationId)
-  }
+  if (!workflowRun) throw ApiError.notFound('Workflow run not found')
+  const abort = new AbortController()
+  const onAbort = () => abort.abort(signal?.reason)
+  if (signal?.aborted) onAbort()
+  else signal?.addEventListener('abort', onAbort, { once: true })
+  let heartbeatLost = false
+  const heartbeat = setInterval(() => {
+    heartbeatWorkflow(claim).then(owned => {
+      if (!owned) { heartbeatLost = true; abort.abort(new Error('Workflow lease lost')) }
+    }).catch(() => { heartbeatLost = true; abort.abort(new Error('Workflow heartbeat failed')) })
+  }, Math.max(1000, Math.floor(workflowLeasePolicy.ttlMs / 3)))
 
   try {
     if (workflowRun.type === 'GROUNDED_TECHNICAL_ANSWER') {
@@ -187,48 +167,21 @@ async function processWorkflowRun(params: {
             : undefined,
         },
         {
-          organizationId: params.organizationId,
-          userId: params.userId,
+          organizationId: claim.organizationId,
+          userId,
           workflowRunId: workflowRun.id,
+          signal: abort.signal,
         }
       )
 
-      const updated = await prisma.workflowRun.update({
-        where: { id: workflowRun.id },
-        data: {
-          status: result.refused ? 'NEEDS_REVIEW' : 'COMPLETED',
+      await finalizeWorkflow(claim, {
+          status: 'COMPLETED',
+          reviewStatus: result.refused ? 'REQUIRED' : 'NOT_REQUESTED',
           confidence: result.confidence,
           output: result as unknown as Prisma.InputJsonValue,
-          completedAt: new Date(),
           errorMessage: null,
-        },
-        select: {
-          id: true,
-          type: true,
-          status: true,
-          confidence: true,
-          input: true,
-          output: true,
-          startedAt: true,
-          completedAt: true,
-          errorMessage: true,
-          organizationId: true,
-          webhookEventId: true,
-        },
       })
-
-      if (workflowRun.webhookEventId) {
-        await prisma.webhookEvent.update({
-          where: { id: workflowRun.webhookEventId },
-          data: {
-            status: result.refused ? 'IGNORED' : 'COMPLETED',
-            processedAt: new Date(),
-            errorMessage: result.refused ? 'Insufficient grounded document context' : null,
-          },
-        })
-      }
-
-      return updated
+      return getWorkflowRunById(claim.id, claim.organizationId)
     }
 
     const extractionInput = workflowRun.webhookEvent
@@ -242,9 +195,10 @@ async function processWorkflowRun(params: {
         })
 
     const result = await aiExtractionsService.extractSalesEvent(extractionInput, {
-      organizationId: params.organizationId,
-      userId: params.userId,
+      organizationId: claim.organizationId,
+      userId,
       workflowRunId: workflowRun.id,
+      signal: abort.signal,
     })
 
     const buyerQuestions = result.extraction.buyerQuestions ?? []
@@ -256,9 +210,10 @@ async function processWorkflowRun(params: {
           const answerResult = await groundedAnswersService.answerQuestion(
             { question },
             {
-              organizationId: params.organizationId,
-              userId: params.userId,
+              organizationId: claim.organizationId,
+              userId,
               workflowRunId: workflowRun.id,
+              signal: abort.signal,
             }
           )
           groundedAnswers.push({
@@ -269,116 +224,84 @@ async function processWorkflowRun(params: {
             citations: answerResult.citations,
           })
         } catch (error) {
-          console.error(`Failed to get grounded answer for question: ${question}`, error)
+          if (abort.signal.aborted) throw error
+          console.error('Failed to get grounded answer for workflow question', error)
+          groundedAnswers.push({ question, answer: null, refused: true, error: 'Answer processing failed', citations: [] })
         }
       }
     }
 
     const finalOutput = { ...result, groundedAnswers }
 
-    const updated = await prisma.workflowRun.update({
-      where: { id: workflowRun.id },
-      data: {
+    await finalizeWorkflow(claim, {
         status: 'COMPLETED',
+        reviewStatus: groundedAnswers.some(answer => answer.refused) ? 'REQUIRED' : 'NOT_REQUESTED',
         confidence: result.extraction.confidence,
         output: finalOutput as unknown as Prisma.InputJsonValue,
-        completedAt: new Date(),
         errorMessage: null,
-      },
-      select: {
-        id: true,
-        type: true,
-        status: true,
-        confidence: true,
-        input: true,
-        output: true,
-        startedAt: true,
-        completedAt: true,
-        errorMessage: true,
-        organizationId: true,
-        webhookEventId: true,
-      },
     })
-
-    if (workflowRun.webhookEventId) {
-      await prisma.webhookEvent.update({
-        where: { id: workflowRun.webhookEventId },
-        data: {
-          status: 'COMPLETED',
-          processedAt: new Date(),
-          errorMessage: null,
-        },
-      })
-    }
-
-    return updated
+    return getWorkflowRunById(claim.id, claim.organizationId)
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Workflow processing failed'
-
-    await prisma.workflowRun.update({
-      where: { id: workflowRun.id },
-      data: {
-        status: 'FAILED',
-        completedAt: new Date(),
-        errorMessage: message,
-      },
+    const message = err instanceof Error && err.message.trim() ? err.message : 'Workflow processing failed'
+    const retryable = !heartbeatLost && (signal?.aborted ||
+      (err instanceof ProviderOperationError ? err.retryable : !(err instanceof ApiError) || err.statusCode >= 500))
+    const willRetry = retryable && claim.attemptCount < claim.maxAttempts
+    await finalizeWorkflow(claim, {
+      status: willRetry ? 'RETRY_WAIT' : 'FAILED',
+      errorMessage: message,
+      nextAttemptAt: willRetry ? new Date(Date.now() + retryDelayMs(claim.attemptCount)) : undefined,
     })
-
-    if (workflowRun.webhookEventId) {
-      await prisma.webhookEvent.update({
-        where: { id: workflowRun.webhookEventId },
-        data: {
-          status: 'FAILED',
-          processedAt: new Date(),
-          errorMessage: message,
-        },
-      })
-    }
-
     throw err
+  } finally {
+    clearInterval(heartbeat)
+    signal?.removeEventListener('abort', onAbort)
   }
+}
+
+async function processWorkflowRun(params: { workflowRunId: string; organizationId: string; userId?: string; signal?: AbortSignal }) {
+  const run = await prisma.workflowRun.findFirst({ where: { id: params.workflowRunId, organizationId: params.organizationId } })
+  if (!run) throw ApiError.notFound('Workflow run not found')
+  if (run.status === 'COMPLETED') return getWorkflowRunById(run.id, params.organizationId)
+  if (run.status !== 'QUEUED' && run.status !== 'RUNNING' && run.status !== 'RETRY_WAIT') {
+    throw ApiError.conflict('Workflow run cannot be processed from its current state')
+  }
+  const claim = await claimWorkflow(params)
+  return claim ? processClaimedWorkflowRun(claim, params.userId, params.signal) : getWorkflowRunById(run.id, params.organizationId)
 }
 
 async function processNextQueuedWorkflowRun(params: {
   organizationId?: string
   userId?: string
+  signal?: AbortSignal
 }) {
-  const workflowRun = await prisma.workflowRun.findFirst({
-    where: {
-      status: 'QUEUED',
-      type: { in: ['SALES_EVENT_EXTRACTION', 'GROUNDED_TECHNICAL_ANSWER'] },
-      ...(params.organizationId && { organizationId: params.organizationId }),
-    },
-    select: {
-      id: true,
-      organizationId: true,
-    },
-    orderBy: { createdAt: 'asc' },
-  })
-
-  if (!workflowRun) {
+  if (params.signal?.aborted) return null
+  const claim = await claimWorkflow({ organizationId: params.organizationId })
+  if (claim && params.signal?.aborted) {
+    await finalizeWorkflow(claim, {
+      status: 'RETRY_WAIT',
+      errorMessage: 'Worker stopped before processing began',
+      nextAttemptAt: new Date(Date.now() + retryDelayMs(claim.attemptCount)),
+    })
     return null
   }
-
-  return processWorkflowRun({
-    workflowRunId: workflowRun.id,
-    organizationId: workflowRun.organizationId,
-    userId: params.userId,
-  })
+  return claim ? processClaimedWorkflowRun(claim, params.userId, params.signal) : null
 }
 
 async function processQueuedWorkflowRuns(params: {
   organizationId?: string
   userId?: string
   limit?: number
+  signal?: AbortSignal
 }) {
   const limit = params.limit ?? 10
   const processed = []
 
   for (let index = 0; index < limit; index += 1) {
+    if (params.signal?.aborted) break
     const workflowRun = await processNextQueuedWorkflowRun({
       organizationId: params.organizationId,
       userId: params.userId,
+      signal: params.signal,
     })
 
     if (!workflowRun) break

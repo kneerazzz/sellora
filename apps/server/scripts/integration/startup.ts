@@ -19,7 +19,7 @@ async function stop(child: ChildProcess) {
   if (child.exitCode !== null || child.signalCode !== null) return
   const exit = once(child, 'exit')
   child.kill('SIGTERM')
-  const deadline = setTimeout(() => child.kill('SIGKILL'), 5000)
+  const deadline = setTimeout(() => child.kill('SIGKILL'), 20_000)
   try { await exit } finally { clearTimeout(deadline) }
   assert.equal(child.exitCode, 0, 'Process must shut down cleanly')
 }

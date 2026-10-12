@@ -14,7 +14,8 @@ const statusStyles: Record<string, string> = {
   RUNNING: 'bg-blue-500/15 text-blue-300 ring-blue-500/30',
   COMPLETED: 'bg-emerald-500/15 text-emerald-300 ring-emerald-500/30',
   FAILED: 'bg-red-500/15 text-red-300 ring-red-500/30',
-  NEEDS_REVIEW: 'bg-amber-500/15 text-amber-300 ring-amber-500/30',
+  RETRY_WAIT: 'bg-amber-500/15 text-amber-300 ring-amber-500/30',
+  CANCELLED: 'bg-zinc-500/15 text-zinc-300 ring-zinc-500/30',
 }
 
 const eventTypeLabel: Record<string, string> = {
@@ -149,6 +150,7 @@ export function WorkflowRunsPage() {
                     <Badge className={statusStyles[run.status] ?? statusStyles.QUEUED}>
                       {run.status}
                     </Badge>
+                    {run.reviewStatus === 'REQUIRED' && <span className="ml-2 text-xs text-amber-300">Review required</span>}
                   </td>
                   <td className="px-5 py-4 text-zinc-400">{run.confidence ?? '—'}</td>
                   <td className="px-5 py-4 text-zinc-400">

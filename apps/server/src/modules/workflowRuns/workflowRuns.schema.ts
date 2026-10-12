@@ -3,7 +3,7 @@ import { z } from 'zod'
 export const listWorkflowRunsSchema = z.object({
   query: z.object({
     status: z
-      .enum(['QUEUED', 'RUNNING', 'COMPLETED', 'FAILED', 'NEEDS_REVIEW'])
+      .enum(['QUEUED', 'RUNNING', 'RETRY_WAIT', 'COMPLETED', 'FAILED', 'CANCELLED'])
       .optional(),
     type: z
       .enum([

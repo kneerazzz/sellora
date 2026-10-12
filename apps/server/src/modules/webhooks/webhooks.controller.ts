@@ -90,7 +90,7 @@ function createIntakeHandler(eventType: WebhookEventType) {
 
     const workflowRun = processed.value
 
-    if (workflowRun.status === 'RUNNING' || workflowRun.status === 'QUEUED') {
+    if (workflowRun.status === 'RUNNING' || workflowRun.status === 'QUEUED' || workflowRun.status === 'RETRY_WAIT') {
       res.status(202).json(
         ApiResponse.ok('Webhook event accepted and processing', {
           ...accepted,

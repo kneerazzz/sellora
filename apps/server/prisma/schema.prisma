@@ -467,12 +467,23 @@ model WorkflowRun {
   updatedAt      DateTime          @updatedAt
   type           WorkflowRunType
   status         WorkflowRunStatus @default(QUEUED)
+  reviewStatus   WorkflowReviewStatus @default(NOT_REQUESTED)
+  deliveryStatus WorkflowDeliveryStatus @default(NOT_REQUESTED)
+  reviewedAt     DateTime?
+  deliveredAt    DateTime?
   confidence     ConfidenceLevel?
   input          Json
   output         Json?
   startedAt      DateTime?
   completedAt    DateTime?
   errorMessage   String?
+  attemptCount   Int               @default(0)
+  maxAttempts    Int               @default(3)
+  nextAttemptAt  DateTime?
+  leaseOwner     String?
+  leaseVersion   Int               @default(0)
+  leaseExpiresAt DateTime?
+  heartbeatAt    DateTime?
   organizationId String
   webhookEventId String?
   syncLogs       SyncLog[]
@@ -484,6 +495,8 @@ model WorkflowRun {
   @@index([webhookEventId])
   @@index([type])
   @@index([status])
+  @@index([status, nextAttemptAt])
+  @@index([status, leaseExpiresAt])
   @@index([createdAt])
   @@map("workflow_runs")
 }
@@ -737,6 +750,22 @@ enum WorkflowRunStatus {
   COMPLETED
   FAILED
   NEEDS_REVIEW
+  RETRY_WAIT
+  CANCELLED
+}
+
+enum WorkflowReviewStatus {
+  NOT_REQUESTED
+  REQUIRED
+  APPROVED
+  REJECTED
+}
+
+enum WorkflowDeliveryStatus {
+  NOT_REQUESTED
+  PENDING
+  SENT
+  FAILED
 }
 
 enum ConfidenceLevel {

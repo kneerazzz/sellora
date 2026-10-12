@@ -60,6 +60,9 @@ try {
   run(process.execPath, ['--import', 'tsx', 'scripts/integration/usageLedger.ts'], {
     ...env, SELLORA_DISPOSABLE_DATABASE_URL: `${base}/sellora_test_migrations`,
   })
+  run(process.execPath, ['--import', 'tsx', 'scripts/integration/workflowLeases.ts'], {
+    ...env, SELLORA_DISPOSABLE_DATABASE_URL: `${base}/sellora_test_migrations`,
+  })
   run('docker', ['exec', name, 'createdb', '-U', 'sellora_test', 'sellora_test_knowledge'])
   run(process.execPath, ['--import', 'tsx', 'scripts/integration/knowledgePath.ts'], {
     ...env, SELLORA_DISPOSABLE_DATABASE_URL: `${base}/sellora_test_knowledge`,

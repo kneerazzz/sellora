@@ -92,7 +92,9 @@ try {
   const otherDoc = await seedDoc(foreign.id, foreignUser.id, 'Refund policy FOREIGN_SOURCE_MARKER.')
   const seedRun = (organizationId = org.id, completed = false) => prisma.workflowRun.create({ data: {
     organizationId, type: 'GROUNDED_TECHNICAL_ANSWER', status: completed ? 'COMPLETED' : 'QUEUED',
-    input: { question: 'the and', documentIds: [] }, ...(completed && { output: { extraction, groundedAnswers: [] } }),
+    input: { question: 'the and', documentIds: [] }, ...(completed && {
+      output: { extraction, groundedAnswers: [] }, startedAt: new Date(), completedAt: new Date(),
+    }),
   } })
   const ownRun = await seedRun(org.id, true), otherRun = await seedRun(foreign.id, true)
   const otherIntegration = await prisma.integration.create({ data: { organizationId: foreign.id, provider: 'HUBSPOT', label: 'Foreign' } })
@@ -165,7 +167,7 @@ try {
     { method: 'POST', route: '/workflow-runs/process-next', allow: staff, body: {} },
     { method: 'POST', route: '/workflow-runs/process-queued', allow: staff, body: { limit: 1 } },
     { method: 'POST', route: '/crm-writeback/preview', allow: mixed, api: true, status: 201, body: { workflowRunId: ownRun.id, provider: 'HUBSPOT' } },
-    ...['email-received', 'call-transcript', 'crm-event', 'manual-question'].map(name => ({ method: 'POST', route: `/webhooks/${name}`,
+    ...['email-received', 'call-transcript', 'manual-question'].map(name => ({ method: 'POST', route: `/webhooks/${name}`,
       allow: ['FULL_ACCESS', 'WEBHOOK_ONLY'], api: true, status: 202, body: { payload: { question: 'the and', documentIds: [] } } })),
   ]
   for (const entry of cases) for (const caller of callers) {
@@ -292,6 +294,9 @@ try {
   console.log('PASS scoped usage view, alert, authorized pause/resume and pre-dispatch denial')
   console.log('PASS bounded inputs and shared JWT/API/worker admission before provider work')
   for (const caller of [full, hook]) {
+    const beforeUnsupported = await prisma.workflowRun.count({ where: { organizationId: org.id, type: 'CRM_UPDATE_PREPARATION' } })
+    await request('POST', '/webhooks/crm-event', caller.token, { payload: {} }, 400)
+    assert.equal(await prisma.workflowRun.count({ where: { organizationId: org.id, type: 'CRM_UPDATE_PREPARATION' } }), beforeUnsupported)
     await request('POST', '/webhooks/manual-question', caller.token, { integrationId: otherIntegration.id, payload: {} }, 404)
     const intake = await request('POST', '/webhooks/manual-question', caller.token, { payload: {
       organizationId: foreign.id, question: 'refund policy', documentIds: [otherDoc.id],

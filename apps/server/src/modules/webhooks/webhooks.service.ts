@@ -8,6 +8,8 @@ import {
 import { prisma } from '../../config/prisma'
 import { ApiError } from '../../utils/apiError'
 import type { WebhookEventInput } from './webhooks.schema'
+import { isSupportedWorkflowType } from '../workflowRuns/workflowState'
+import { workflowLeasePolicy } from '../workflowRuns/workflowLease'
 
 function workflowTypeForEvent(eventType: WebhookEventType): WorkflowRunType {
   switch (eventType) {
@@ -73,6 +75,10 @@ async function intakeWebhookEvent(params: {
   idempotencyKey?: string
 }) {
   const { input, eventType, organizationId, apiKeyId, idempotencyKey } = params
+  const workflowType = workflowTypeForEvent(eventType)
+  if (!isSupportedWorkflowType(workflowType)) {
+    throw ApiError.badRequest(`Webhook event type ${eventType} has no supported workflow processor`)
+  }
 
   if (input.integrationId) {
     const integration = await prisma.integration.findFirst({
@@ -118,8 +124,9 @@ async function intakeWebhookEvent(params: {
 
       const workflowRun = await tx.workflowRun.create({
         data: {
-          type: workflowTypeForEvent(eventType),
+          type: workflowType,
           status: 'QUEUED',
+          maxAttempts: workflowLeasePolicy.maxAttempts,
           input: input.payload as object,
           organizationId,
           webhookEventId: webhookEvent.id,

@@ -126,9 +126,10 @@ export interface TeamMember {
 export type WorkflowRunStatus =
   | 'QUEUED'
   | 'RUNNING'
+  | 'RETRY_WAIT'
   | 'COMPLETED'
   | 'FAILED'
-  | 'NEEDS_REVIEW'
+  | 'CANCELLED'
 
 export type WorkflowRunType =
   | 'SALES_EVENT_EXTRACTION'
@@ -157,10 +158,16 @@ export interface WorkflowRun {
   updatedAt: string
   type: WorkflowRunType
   status: WorkflowRunStatus
+  reviewStatus: 'NOT_REQUESTED' | 'REQUIRED' | 'APPROVED' | 'REJECTED'
+  deliveryStatus: 'NOT_REQUESTED' | 'PENDING' | 'SENT' | 'FAILED'
   confidence: string | null
   startedAt: string | null
   completedAt: string | null
   errorMessage: string | null
+  attemptCount: number
+  maxAttempts: number
+  nextAttemptAt: string | null
+  leaseExpiresAt: string | null
   organizationId: string
   webhookEventId: string | null
   input?: unknown

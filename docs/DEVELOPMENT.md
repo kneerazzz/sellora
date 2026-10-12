@@ -81,7 +81,8 @@ settings into apps started on the host. Secrets below are listed by name only.
 | `PROVIDER_REQUEST_MAX_BYTES`, `PROVIDER_RESPONSE_MAX_BYTES` | Provider HTTP request/streamed-response ceilings; both default to 1 MiB |
 | `PROVIDER_INPUT_MAX_CHARS`, `PROVIDER_QUESTION_MAX` | Provider/local-model text and extracted-question ceilings; defaults 200,000 characters and 50 questions |
 | `DOCUMENT_UPLOAD_MAX_BYTES`, `DOCUMENT_EXTRACTED_MAX_CHARS`, `DOCUMENT_MAX_PAGES` | Upload, parser-expansion and page ceilings; defaults 25 MiB, 1,000,000 characters and 500 pages |
-| `WORKFLOW_WORKER_POLL_INTERVAL_MS`, `WORKFLOW_WORKER_BATCH_SIZE` | Worker controls, defaults 10000 ms / 5; use positive integers |
+| `WORKFLOW_WORKER_POLL_INTERVAL_MS`, `WORKFLOW_WORKER_BATCH_SIZE`, `WORKFLOW_WORKER_SHUTDOWN_MS` | Sequential worker poll controls, defaults 10000 ms / 5 / 15000 ms; bounded positive integers |
+| `WORKFLOW_LEASE_TTL_MS`, `WORKFLOW_MAX_ATTEMPTS`, `WORKFLOW_RETRY_BASE_MS`, `WORKFLOW_RETRY_MAX_MS` | Workflow lease/retry defaults 60000 ms / 3 / 1000 ms / 30000 ms; finite positive integers. Heartbeat renews every third of the TTL; a killed worker is reclaimable after the lease expires. At most 20 attempts. These are engineering settings, not a buyer SLA. |
 | `VITE_API_URL` | Optional dashboard API base, default `/api/v1`; Vite values are public, never secrets |
 
 Extraction's legacy `OPENAI_MODEL`/`GROQ_MODEL` aliases still exist; use the explicit
