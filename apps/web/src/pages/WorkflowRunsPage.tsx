@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Eye } from 'lucide-react'
 import { getErrorMessage } from '@/api/client'
-import { getWorkflowRun, listWorkflowRuns, previewCrmWriteback } from '@/api/workflowRuns'
+import { actOnWorkflowRun, getWorkflowRun, listWorkflowRuns, previewCrmWriteback } from '@/api/workflowRuns'
 import type { IntegrationProvider, WorkflowRun } from '@/types/api'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -36,6 +36,11 @@ export function WorkflowRunsPage() {
   const [previewJson, setPreviewJson] = useState<unknown>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [provider, setProvider] = useState<IntegrationProvider>('HUBSPOT')
+  const [detailOpen, setDetailOpen] = useState(false)
+  const [detail, setDetail] = useState<WorkflowRun | null>(null)
+  const [detailError, setDetailError] = useState('')
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [actionPending, setActionPending] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -75,6 +80,36 @@ export function WorkflowRunsPage() {
       setPreviewJson({ error: getErrorMessage(err) })
     } finally {
       setPreviewLoading(false)
+    }
+  }
+
+  async function openDetail(id: string) {
+    setDetailOpen(true)
+    setDetailLoading(true)
+    setDetailError('')
+    setDetail(null)
+    try {
+      setDetail(await getWorkflowRun(id))
+    } catch (err) {
+      setDetailError(getErrorMessage(err))
+    } finally {
+      setDetailLoading(false)
+    }
+  }
+
+  async function runAction(action: 'retry' | 'cancel') {
+    if (!detail) return
+    setActionPending(true)
+    setDetailError('')
+    try {
+      const updated = await actOnWorkflowRun(detail.id, action)
+      setDetail(updated)
+      await load()
+    } catch (err) {
+      await openDetail(detail.id)
+      setDetailError(getErrorMessage(err))
+    } finally {
+      setActionPending(false)
     }
   }
 
@@ -151,6 +186,8 @@ export function WorkflowRunsPage() {
                       {run.status}
                     </Badge>
                     {run.reviewStatus === 'REQUIRED' && <span className="ml-2 text-xs text-amber-300">Review required</span>}
+                    {run.status === 'RETRY_WAIT' && run.nextAttemptAt &&
+                      <p className="mt-1 text-xs text-amber-300">Retry after {formatDate(run.nextAttemptAt)}</p>}
                   </td>
                   <td className="px-5 py-4 text-zinc-400">{run.confidence ?? '—'}</td>
                   <td className="px-5 py-4 text-zinc-400">
@@ -160,11 +197,16 @@ export function WorkflowRunsPage() {
                     <Button
                       variant="secondary"
                       className="gap-1.5 !py-1.5 !text-xs"
-                      onClick={() => handlePreview(run)}
+                      onClick={() => openDetail(run.id)}
                     >
                       <Eye className="h-3.5 w-3.5" />
-                      Preview CRM Writeback
+                      Details
                     </Button>
+                    {run.status === 'COMPLETED' && <Button
+                      variant="secondary"
+                      className="ml-2 !py-1.5 !text-xs"
+                      onClick={() => handlePreview(run)}
+                    >CRM preview</Button>}
                   </td>
                 </tr>
               ))
@@ -172,6 +214,45 @@ export function WorkflowRunsPage() {
           </tbody>
         </table>
       </Card>
+
+      <Modal open={detailOpen} onClose={() => setDetailOpen(false)} title="Workflow activity"
+        description="Processing, review and delivery remain separate. Retry and cancel never send externally."
+        className="max-w-2xl">
+        {detailLoading ? <p className="text-sm text-zinc-400">Loading run…</p> : detail ? (
+          <div className="space-y-4 text-sm text-zinc-200">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge className={statusStyles[detail.status] ?? statusStyles.QUEUED}>{detail.status}</Badge>
+              <span>Attempt {detail.attemptCount} of {detail.maxAttempts}</span>
+              {detail.reviewStatus === 'REQUIRED' && <span className="text-amber-300">Review required</span>}
+            </div>
+            {detail.errorMessage && <p className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-red-200">{detail.errorMessage}</p>}
+            {detail.status === 'RETRY_WAIT' && detail.nextAttemptAt &&
+              <p className="text-amber-300">Scheduled retry: {formatDate(detail.nextAttemptAt)}</p>}
+            <div className="flex gap-2">
+              <Button variant="secondary" onClick={() => openDetail(detail.id)} disabled={actionPending}>Refresh</Button>
+              {(['FAILED', 'RETRY_WAIT'].includes(detail.status) &&
+                detail.reviewStatus !== 'APPROVED' && detail.deliveryStatus !== 'SENT') &&
+                <Button variant="secondary" onClick={() => runAction('retry')} disabled={actionPending}>Retry</Button>}
+              {['QUEUED', 'RUNNING', 'RETRY_WAIT'].includes(detail.status) &&
+                <Button variant="secondary" onClick={() => runAction('cancel')} disabled={actionPending}>Cancel</Button>}
+            </div>
+            <div>
+              <h3 className="mb-2 font-medium">Activity</h3>
+              <ol className="max-h-40 space-y-2 overflow-y-auto text-xs text-zinc-400">
+                {detail.activities?.map(item => <li key={item.id}>
+                  {formatDate(item.createdAt)} · {item.kind} · attempt {item.attemptCount}
+                  {item.message && <span className="block text-zinc-300">{item.message}</span>}
+                </li>)}
+              </ol>
+            </div>
+            <div>
+              <h3 className="mb-2 font-medium">{detail.status === 'COMPLETED' ? 'Result' : 'Partial result (if available)'}</h3>
+              <pre className="max-h-60 overflow-auto rounded-lg bg-zinc-950 p-3 text-xs">{JSON.stringify(detail.output ?? null, null, 2)}</pre>
+            </div>
+          </div>
+        ) : null}
+        {detailError && <p className="mt-3 text-sm text-red-300">{detailError}</p>}
+      </Modal>
 
       <Modal
         open={previewOpen}

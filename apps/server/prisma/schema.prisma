@@ -35,6 +35,7 @@ model Organization {
   users            User[]
   webhookEvents    WebhookEvent[]
   workflowRuns     WorkflowRun[]
+  workflowRunActivities WorkflowRunActivity[]
   workflows        WorkflowTrigger[]
   workloadReservations WorkloadReservation[]
   usageTraces      UsageTrace[]
@@ -449,7 +450,7 @@ model WebhookEvent {
   organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   workflowRuns       WorkflowRun[]
 
-  @@unique([organizationId, idempotencyKey])
+  @@unique([organizationId, source, eventType, idempotencyKey])
   @@index([organizationId])
   @@index([apiKeyId])
   @@index([integrationId])
@@ -488,6 +489,7 @@ model WorkflowRun {
   webhookEventId String?
   syncLogs       SyncLog[]
   usageTraces    UsageTrace[]
+  activities     WorkflowRunActivity[]
   organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   webhookEvent   WebhookEvent?     @relation(fields: [webhookEventId], references: [id])
 
@@ -499,6 +501,23 @@ model WorkflowRun {
   @@index([status, leaseExpiresAt])
   @@index([createdAt])
   @@map("workflow_runs")
+}
+
+model WorkflowRunActivity {
+  id             String @id @default(cuid())
+  createdAt      DateTime @default(now())
+  organizationId String
+  workflowRunId  String
+  kind           WorkflowRunActivityKind
+  attemptCount   Int
+  message        String?
+  actorUserId    String?
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  workflowRun    WorkflowRun @relation(fields: [workflowRunId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@index([workflowRunId, createdAt])
+  @@map("workflow_run_activities")
 }
 
 model SyncLog {
@@ -751,6 +770,17 @@ enum WorkflowRunStatus {
   FAILED
   NEEDS_REVIEW
   RETRY_WAIT
+  CANCELLED
+}
+
+enum WorkflowRunActivityKind {
+  RECEIVED
+  CLAIMED
+  CHECKPOINT
+  RETRY_WAIT
+  FAILED
+  COMPLETED
+  RETRIED
   CANCELLED
 }
 

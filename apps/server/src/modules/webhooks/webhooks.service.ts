@@ -10,6 +10,21 @@ import { ApiError } from '../../utils/apiError'
 import type { WebhookEventInput } from './webhooks.schema'
 import { isSupportedWorkflowType } from '../workflowRuns/workflowState'
 import { workflowLeasePolicy } from '../workflowRuns/workflowLease'
+import { isDeepStrictEqual } from 'node:util'
+
+const externalKeyPrefix = '__external__:'
+
+function resolvedIdempotencyKey(input: WebhookEventInput, headerKey?: string) {
+  if (headerKey) {
+    if (headerKey.length > 200 || headerKey.startsWith(externalKeyPrefix)) {
+      throw ApiError.badRequest('Invalid Idempotency-Key')
+    }
+    return headerKey
+  }
+  return input.externalObjectId
+    ? `${externalKeyPrefix}${input.externalObjectType ?? 'OTHER'}:${input.externalObjectId}`
+    : undefined
+}
 
 function workflowTypeForEvent(eventType: WebhookEventType): WorkflowRunType {
   switch (eventType) {
@@ -31,10 +46,13 @@ function workflowTypeForEvent(eventType: WebhookEventType): WorkflowRunType {
 
 async function findIdempotentWebhookEvent(
   organizationId: string,
+  source: WebhookEventSource,
+  eventType: WebhookEventType,
+  input: WebhookEventInput,
   idempotencyKey: string
 ) {
   const existing = await prisma.webhookEvent.findFirst({
-    where: { organizationId, idempotencyKey },
+    where: { organizationId, source, eventType, idempotencyKey },
     select: {
       id: true,
       source: true,
@@ -44,6 +62,8 @@ async function findIdempotentWebhookEvent(
       externalObjectId: true,
       receivedAt: true,
       organizationId: true,
+      payload: true,
+      integrationId: true,
       workflowRuns: {
         select: {
           id: true,
@@ -59,11 +79,16 @@ async function findIdempotentWebhookEvent(
     },
   })
 
-  if (!existing?.workflowRuns[0]) {
-    return null
+  if (!existing) return null
+  if (!isDeepStrictEqual(existing.payload, input.payload) ||
+    existing.externalObjectType !== (input.externalObjectType ?? null) ||
+    existing.externalObjectId !== (input.externalObjectId ?? null) ||
+    existing.integrationId !== (input.integrationId ?? null)) {
+    throw ApiError.conflict('Idempotency key was already used for different event content')
   }
+  if (!existing.workflowRuns[0]) throw ApiError.conflict('Idempotent event has no workflow run')
 
-  const { workflowRuns, ...webhookEvent } = existing
+  const { workflowRuns, payload: _payload, integrationId: _integrationId, ...webhookEvent } = existing
   return { webhookEvent, workflowRun: workflowRuns[0] }
 }
 
@@ -74,7 +99,8 @@ async function intakeWebhookEvent(params: {
   apiKeyId: string
   idempotencyKey?: string
 }) {
-  const { input, eventType, organizationId, apiKeyId, idempotencyKey } = params
+  const { input, eventType, organizationId, apiKeyId } = params
+  const idempotencyKey = resolvedIdempotencyKey(input, params.idempotencyKey)
   const workflowType = workflowTypeForEvent(eventType)
   if (!isSupportedWorkflowType(workflowType)) {
     throw ApiError.badRequest(`Webhook event type ${eventType} has no supported workflow processor`)
@@ -92,7 +118,7 @@ async function intakeWebhookEvent(params: {
   }
 
   if (idempotencyKey) {
-    const existing = await findIdempotentWebhookEvent(organizationId, idempotencyKey)
+    const existing = await findIdempotentWebhookEvent(organizationId, input.source as WebhookEventSource, eventType, input, idempotencyKey)
     if (existing) return existing
   }
 
@@ -141,6 +167,10 @@ async function intakeWebhookEvent(params: {
         },
       })
 
+      await tx.workflowRunActivity.create({ data: {
+        organizationId, workflowRunId: workflowRun.id, kind: 'RECEIVED', attemptCount: 0,
+      } })
+
       return { webhookEvent, workflowRun }
     })
   } catch (error) {
@@ -149,7 +179,7 @@ async function intakeWebhookEvent(params: {
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === 'P2002'
     ) {
-      const existing = await findIdempotentWebhookEvent(organizationId, idempotencyKey)
+      const existing = await findIdempotentWebhookEvent(organizationId, input.source as WebhookEventSource, eventType, input, idempotencyKey)
       if (existing) return existing
     }
 

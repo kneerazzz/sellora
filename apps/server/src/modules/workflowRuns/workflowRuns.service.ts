@@ -8,7 +8,14 @@ import { groundedAnswersService } from '../groundedAnswers/groundedAnswers.servi
 import type { PaginatedResult } from '../../types/pagination.types'
 import type { ListWorkflowRunsQuery } from './workflowRuns.schema'
 import { ProviderOperationError } from '../../services/provider/providerTransport'
-import { claimWorkflow, finalizeWorkflow, heartbeatWorkflow, retryDelayMs, workflowLeasePolicy, type WorkflowClaim } from './workflowLease'
+import { claimWorkflow, checkpointWorkflow, finalizeWorkflow, heartbeatWorkflow, retryDelayMs, workflowLeasePolicy, type WorkflowClaim } from './workflowLease'
+
+type SalesResult = Awaited<ReturnType<typeof aiExtractionsService.extractSalesEvent>>
+type GroundedResult = Awaited<ReturnType<typeof groundedAnswersService.answerQuestion>>
+
+function checkpointObject(value: Prisma.JsonValue | null): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null
+}
 
 const workflowRunListSelect = {
   id: true,
@@ -46,6 +53,8 @@ const workflowRunDetailSelect = {
   ...workflowRunListSelect,
   input: true,
   output: true,
+  activities: { select: { id: true, createdAt: true, kind: true, attemptCount: true, message: true, actorUserId: true },
+    orderBy: { createdAt: 'desc' }, take: 100 },
   webhookEvent: {
     select: {
       id: true,
@@ -114,6 +123,60 @@ async function getWorkflowRunById(
   return workflowRun
 }
 
+async function operateWorkflowRun(params: {
+  workflowRunId: string
+  organizationId: string
+  actorUserId: string
+  action: 'retry' | 'cancel'
+  reason?: string
+}) {
+  await prisma.$transaction(async tx => {
+    const run = await tx.workflowRun.findFirst({
+      where: { id: params.workflowRunId, organizationId: params.organizationId },
+      select: { id: true, status: true, startedAt: true, leaseVersion: true, attemptCount: true,
+        webhookEventId: true, reviewStatus: true, deliveryStatus: true },
+    })
+    if (!run) throw ApiError.notFound('Workflow run not found')
+    if (params.action === 'retry') {
+      if (!['FAILED', 'RETRY_WAIT'].includes(run.status) ||
+        run.reviewStatus === 'APPROVED' || run.deliveryStatus === 'SENT') {
+        throw ApiError.conflict('Workflow run cannot be retried from its current state')
+      }
+    } else if (!['QUEUED', 'RUNNING', 'RETRY_WAIT'].includes(run.status)) {
+      throw ApiError.conflict('Workflow run cannot be cancelled from its current state')
+    }
+    const now = new Date()
+    const updated = await tx.workflowRun.updateMany({
+      where: { id: run.id, organizationId: params.organizationId, status: run.status,
+        leaseVersion: run.leaseVersion },
+      data: params.action === 'retry' ? {
+        status: 'QUEUED', attemptCount: 0, startedAt: null, completedAt: null,
+        nextAttemptAt: null, leaseOwner: null, leaseExpiresAt: null, heartbeatAt: null,
+        leaseVersion: { increment: 1 }, reviewStatus: 'NOT_REQUESTED', reviewedAt: null,
+        confidence: null,
+      } : {
+        status: 'CANCELLED', startedAt: run.startedAt ?? now, completedAt: now, nextAttemptAt: null,
+        leaseOwner: null, leaseExpiresAt: null, heartbeatAt: null,
+        leaseVersion: { increment: 1 },
+        errorMessage: params.reason ?? 'Cancelled by operator',
+      },
+    })
+    if (updated.count !== 1) throw ApiError.conflict('Workflow run changed during operator action')
+    await tx.workflowRunActivity.create({ data: {
+      organizationId: params.organizationId, workflowRunId: run.id,
+      kind: params.action === 'retry' ? 'RETRIED' : 'CANCELLED',
+      attemptCount: run.attemptCount, actorUserId: params.actorUserId,
+      message: params.reason ?? (params.action === 'retry' ? 'Manual retry requested' : 'Cancelled by operator'),
+    } })
+    if (run.webhookEventId) await tx.webhookEvent.update({
+      where: { id: run.webhookEventId }, data: params.action === 'retry'
+        ? { status: 'QUEUED', processedAt: null, errorMessage: null }
+        : { status: 'IGNORED', processedAt: now, errorMessage: params.reason ?? 'Cancelled by operator' },
+    })
+  })
+  return getWorkflowRunById(params.workflowRunId, params.organizationId)
+}
+
 async function processClaimedWorkflowRun(claim: WorkflowClaim, userId?: string, signal?: AbortSignal) {
   const workflowRun = await prisma.workflowRun.findFirst({
     where: {
@@ -159,7 +222,10 @@ async function processClaimedWorkflowRun(claim: WorkflowClaim, userId?: string, 
         throw ApiError.badRequest('Grounded answer workflow requires a question')
       }
 
-      const result = await groundedAnswersService.answerQuestion(
+      const previous = checkpointObject(workflowRun.output)
+      const result: GroundedResult = previous?.kind === 'GROUNDED_ANSWER_PARTIAL' && previous.result
+        ? previous.result as GroundedResult
+        : await groundedAnswersService.answerQuestion(
         {
           question,
           documentIds: Array.isArray(input.documentIds)
@@ -173,6 +239,11 @@ async function processClaimedWorkflowRun(claim: WorkflowClaim, userId?: string, 
           signal: abort.signal,
         }
       )
+      if (previous?.kind !== 'GROUNDED_ANSWER_PARTIAL') {
+        const saved = await checkpointWorkflow(claim, { kind: 'GROUNDED_ANSWER_PARTIAL', result } as Prisma.InputJsonValue,
+          'Grounded answer produced')
+        if (!saved) throw ApiError.conflict('Workflow lease was lost before result checkpoint')
+      }
 
       await finalizeWorkflow(claim, {
           status: 'COMPLETED',
@@ -194,18 +265,29 @@ async function processClaimedWorkflowRun(claim: WorkflowClaim, userId?: string, 
           payload: workflowRun.input,
         })
 
-    const result = await aiExtractionsService.extractSalesEvent(extractionInput, {
+    const previous = checkpointObject(workflowRun.output)
+    const partial = previous?.kind === 'SALES_EVENT_PARTIAL' ? previous : null
+    const result: SalesResult = partial?.result ? partial.result as SalesResult : await aiExtractionsService.extractSalesEvent(extractionInput, {
       organizationId: claim.organizationId,
       userId,
       workflowRunId: workflowRun.id,
       signal: abort.signal,
     })
 
+    const groundedAnswers: Array<Record<string, unknown>> = partial && Array.isArray(partial.groundedAnswers)
+      ? partial.groundedAnswers as Array<Record<string, unknown>> : []
+    if (!partial) {
+      const saved = await checkpointWorkflow(claim,
+        { kind: 'SALES_EVENT_PARTIAL', result, groundedAnswers } as Prisma.InputJsonValue,
+        'Sales extraction produced')
+      if (!saved) throw ApiError.conflict('Workflow lease was lost before extraction checkpoint')
+    }
+
     const buyerQuestions = result.extraction.buyerQuestions ?? []
-    const groundedAnswers = []
     
     if (buyerQuestions.length > 0) {
-      for (const question of buyerQuestions) {
+      for (let index = groundedAnswers.length; index < buyerQuestions.length; index += 1) {
+        const question = buyerQuestions[index]!
         try {
           const answerResult = await groundedAnswersService.answerQuestion(
             { question },
@@ -228,6 +310,10 @@ async function processClaimedWorkflowRun(claim: WorkflowClaim, userId?: string, 
           console.error('Failed to get grounded answer for workflow question', error)
           groundedAnswers.push({ question, answer: null, refused: true, error: 'Answer processing failed', citations: [] })
         }
+        const saved = await checkpointWorkflow(claim,
+          { kind: 'SALES_EVENT_PARTIAL', result, groundedAnswers } as Prisma.InputJsonValue,
+          `Buyer question ${index + 1} of ${buyerQuestions.length} recorded`)
+        if (!saved) throw ApiError.conflict('Workflow lease was lost before question checkpoint')
       }
     }
 
@@ -314,6 +400,7 @@ async function processQueuedWorkflowRuns(params: {
 export const workflowRunsService = {
   listWorkflowRuns,
   getWorkflowRunById,
+  operateWorkflowRun,
   processWorkflowRun,
   processNextQueuedWorkflowRun,
   processQueuedWorkflowRuns,

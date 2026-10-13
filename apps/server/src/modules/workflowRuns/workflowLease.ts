@@ -29,7 +29,7 @@ export function retryDelayMs(attempt: number) {
 export async function claimWorkflow(params: { organizationId?: string; workflowRunId?: string } = {}): Promise<WorkflowClaim | null> {
   const owner = randomUUID()
   await prisma.$transaction(async tx => {
-    const rows = await tx.$queryRaw<Array<{ id: string; webhookEventId: string | null }>>`
+    const rows = await tx.$queryRaw<Array<{ id: string; organizationId: string; attemptCount: number; webhookEventId: string | null }>>`
       WITH expired AS (
         SELECT "id" FROM "workflow_runs"
         WHERE "status" = 'RUNNING' AND "leaseExpiresAt" <= NOW()
@@ -43,8 +43,13 @@ export async function claimWorkflow(params: { organizationId?: string; workflowR
         "leaseOwner" = NULL, "leaseExpiresAt" = NULL, "heartbeatAt" = NULL,
         "nextAttemptAt" = NULL, "updatedAt" = NOW()
       FROM expired WHERE run."id" = expired."id"
-      RETURNING run."id", run."webhookEventId"`
+      RETURNING run."id", run."organizationId", run."attemptCount", run."webhookEventId"`
     for (const row of rows) {
+      await tx.workflowRunActivity.create({ data: {
+        organizationId: row.organizationId,
+        workflowRunId: row.id, kind: 'FAILED', attemptCount: row.attemptCount,
+        message: 'Worker lease expired after maximum attempts',
+      } })
       if (row.webhookEventId) await tx.webhookEvent.update({
         where: { id: row.webhookEventId },
         data: { status: 'FAILED', processedAt: new Date(), errorMessage: 'Worker lease expired after maximum attempts' },
@@ -52,7 +57,8 @@ export async function claimWorkflow(params: { organizationId?: string; workflowR
     }
   })
 
-  const rows = await prisma.$queryRaw<WorkflowClaim[]>`
+  return prisma.$transaction(async tx => {
+    const rows = await tx.$queryRaw<WorkflowClaim[]>`
     WITH candidate AS (
       SELECT "id" FROM "workflow_runs"
       WHERE "type" IN ('SALES_EVENT_EXTRACTION'::"WorkflowRunType", 'GROUNDED_TECHNICAL_ANSWER'::"WorkflowRunType")
@@ -71,7 +77,13 @@ export async function claimWorkflow(params: { organizationId?: string; workflowR
       "heartbeatAt" = NOW(), "updatedAt" = NOW()
     FROM candidate WHERE run."id" = candidate."id"
     RETURNING run."id", run."organizationId", run."leaseOwner", run."leaseVersion", run."attemptCount", run."maxAttempts"`
-  return rows[0] ?? null
+    const claim = rows[0]
+    if (claim) await tx.workflowRunActivity.create({ data: {
+      organizationId: claim.organizationId, workflowRunId: claim.id,
+      kind: 'CLAIMED', attemptCount: claim.attemptCount,
+    } })
+    return claim ?? null
+  })
 }
 
 export async function heartbeatWorkflow(claim: WorkflowClaim): Promise<boolean> {
@@ -83,6 +95,23 @@ export async function heartbeatWorkflow(claim: WorkflowClaim): Promise<boolean> 
       AND "status" = 'RUNNING' AND "leaseOwner" = ${claim.leaseOwner}
       AND "leaseVersion" = ${claim.leaseVersion} AND "leaseExpiresAt" > NOW()`
   return count === 1
+}
+
+export async function checkpointWorkflow(claim: WorkflowClaim, output: Prisma.InputJsonValue, message: string): Promise<boolean> {
+  return prisma.$transaction(async tx => {
+    const [{ now }] = await tx.$queryRaw<Array<{ now: Date }>>`SELECT NOW() AS now`
+    const updated = await tx.workflowRun.updateMany({
+      where: { id: claim.id, organizationId: claim.organizationId, status: 'RUNNING',
+        leaseOwner: claim.leaseOwner, leaseVersion: claim.leaseVersion, leaseExpiresAt: { gt: now } },
+      data: { output },
+    })
+    if (updated.count !== 1) return false
+    await tx.workflowRunActivity.create({ data: {
+      organizationId: claim.organizationId, workflowRunId: claim.id,
+      kind: 'CHECKPOINT', attemptCount: claim.attemptCount, message,
+    } })
+    return true
+  })
 }
 
 export async function finalizeWorkflow(claim: WorkflowClaim, data: {
@@ -104,6 +133,11 @@ export async function finalizeWorkflow(claim: WorkflowClaim, data: {
         nextAttemptAt: data.status === 'RETRY_WAIT' ? data.nextAttemptAt : null },
     })
     if (updated.count !== 1) return false
+    await tx.workflowRunActivity.create({ data: {
+      organizationId: claim.organizationId, workflowRunId: claim.id,
+      kind: data.status, attemptCount: claim.attemptCount,
+      message: data.status === 'COMPLETED' ? null : data.errorMessage,
+    } })
     const run = await tx.workflowRun.findUniqueOrThrow({ where: { id: claim.id }, select: { webhookEventId: true } })
     if (run.webhookEventId && data.status !== 'RETRY_WAIT') await tx.webhookEvent.update({
       where: { id: run.webhookEventId },

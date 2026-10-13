@@ -96,6 +96,11 @@ try {
       output: { extraction, groundedAnswers: [] }, startedAt: new Date(), completedAt: new Date(),
     }),
   } })
+  const seedFailedRun = (organizationId = org.id) => prisma.workflowRun.create({ data: {
+    organizationId, type: 'GROUNDED_TECHNICAL_ANSWER', status: 'FAILED',
+    input: { question: 'the and', documentIds: [] }, startedAt: new Date(), completedAt: new Date(),
+    errorMessage: 'Fixture failure',
+  } })
   const ownRun = await seedRun(org.id, true), otherRun = await seedRun(foreign.id, true)
   const otherIntegration = await prisma.integration.create({ data: { organizationId: foreign.id, provider: 'HUBSPOT', label: 'Foreign' } })
   const seedKey = (organizationId = org.id) => prisma.apiKey.create({ data: { organizationId, label: 'Fixture', scope: 'FULL_ACCESS',
@@ -166,6 +171,10 @@ try {
     { method: 'POST', route: '/workflow-runs/:id/process', allow: mixed, api: true, setup: async () => ({ route: `/workflow-runs/${(await seedRun()).id}/process` }) },
     { method: 'POST', route: '/workflow-runs/process-next', allow: staff, body: {} },
     { method: 'POST', route: '/workflow-runs/process-queued', allow: staff, body: { limit: 1 } },
+    { method: 'POST', route: '/workflow-runs/:id/retry', allow: staff, body: {},
+      setup: async () => ({ route: `/workflow-runs/${(await seedFailedRun()).id}/retry` }) },
+    { method: 'POST', route: '/workflow-runs/:id/cancel', allow: staff, body: {},
+      setup: async () => ({ route: `/workflow-runs/${(await seedRun()).id}/cancel` }) },
     { method: 'POST', route: '/crm-writeback/preview', allow: mixed, api: true, status: 201, body: { workflowRunId: ownRun.id, provider: 'HUBSPOT' } },
     ...['email-received', 'call-transcript', 'manual-question'].map(name => ({ method: 'POST', route: `/webhooks/${name}`,
       allow: ['FULL_ACCESS', 'WEBHOOK_ONLY'], api: true, status: 202, body: { payload: { question: 'the and', documentIds: [] } } })),
@@ -208,6 +217,10 @@ try {
     await request('POST', `/workflow-runs/${otherRun.id}/process`, caller.token, {}, 404)
     await request('POST', '/crm-writeback/preview', caller.token, { workflowRunId: otherRun.id, provider: 'HUBSPOT' }, 404)
     await request('POST', '/crm-writeback/preview', caller.token, { workflowRunId: ownRun.id, provider: 'HUBSPOT', integrationId: otherIntegration.id }, 404)
+  }
+  for (const caller of callers.filter(c => staff.includes(c.kind))) {
+    await request('POST', `/workflow-runs/${otherRun.id}/retry`, caller.token, {}, 404)
+    await request('POST', `/workflow-runs/${otherRun.id}/cancel`, caller.token, {}, 404)
   }
   for (const caller of [admin, full]) {
     const before = providerCalls

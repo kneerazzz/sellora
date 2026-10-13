@@ -38,7 +38,7 @@ export const webhookEventBodySchema = z.object({
         'OTHER',
       ])
       .optional(),
-    externalObjectId: z.string().trim().min(1).optional(),
+    externalObjectId: z.string().trim().min(1).max(200).optional(),
     integrationId: z.string().cuid('Invalid integration ID').optional(),
     payload: z.record(z.string(), z.unknown()),
   }),

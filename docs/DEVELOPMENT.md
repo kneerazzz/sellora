@@ -45,6 +45,16 @@ inspection; remove only the specifically created disposable service afterwards.
 Install/build failures must be reported, not bypassed with stale `node_modules`.
 Model downloads, model quality and browser/client acceptance are separate gates.
 
+Packet 06D keeps document ingestion synchronous for now. The disposable HTTP
+fixture records elapsed time and process RSS before/after small TXT, Markdown,
+PDF and DOCX uploads with deterministic local embedding responses. These samples
+do not establish a supported file size, parser CPU or memory ceiling, or a client
+latency target. The first PDF parse can increase process RSS substantially. Revisit
+queued ingestion when a representative buyer workload and an agreed latency and
+resource limit are available, or when measured uploads breach an agreed limit.
+Before enabling larger uploads, isolate parser resource use and verify crash,
+cancel, original retention and atomic publication on a disposable target.
+
 npm 12 uses explicit `allowScripts` policies in each app: native build/runtime
 dependencies are allowed; optional fsevents and protobufjs's informational
 postinstall are denied. The web install explicitly allows URL dependencies because

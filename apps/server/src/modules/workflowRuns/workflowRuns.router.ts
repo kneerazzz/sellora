@@ -7,6 +7,7 @@ import {
   listWorkflowRunsSchema,
   processQueuedWorkflowRunsSchema,
   workflowRunIdParamSchema,
+  workflowOperatorActionSchema,
 } from './workflowRuns.schema'
 
 export const workflowRunsRouter = Router()
@@ -48,4 +49,20 @@ workflowRunsRouter.post(
   apiKeyRateLimit(),
   validate(workflowRunIdParamSchema),
   workflowRunsController.processWorkflowRun
+)
+
+workflowRunsRouter.post(
+  '/:id/retry',
+  authenticate,
+  authorize('ADMIN', 'MANAGER', 'REP'),
+  validate(workflowOperatorActionSchema),
+  workflowRunsController.retryWorkflowRun
+)
+
+workflowRunsRouter.post(
+  '/:id/cancel',
+  authenticate,
+  authorize('ADMIN', 'MANAGER', 'REP'),
+  validate(workflowOperatorActionSchema),
+  workflowRunsController.cancelWorkflowRun
 )

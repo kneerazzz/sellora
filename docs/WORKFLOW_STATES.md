@@ -43,5 +43,21 @@ crash may have unknown usage; lease recovery does not claim it was zero.
 Only `SALES_EVENT_EXTRACTION` and `GROUNDED_TECHNICAL_ANSWER` have processors.
 Unsupported webhook event types fail before event/run insertion. Existing CRM
 webhook examples may receive HTTP 400 until a real processor is selected; they
-are not production integrations. Duplicate-event content identity and safe
-operator retry/cancel actions remain packet 06C.
+are not production integrations.
+
+Packet 06C scopes webhook idempotency to organization, source and event type.
+An explicit key, or a derived external object identity when no key is supplied,
+resolves repeated intake to one event/run. Reuse with different payload,
+external identity or integration returns 409. No key or external identity means
+each intake is a new event. Duplicate processing claims cannot publish a second
+result.
+
+Staff ADMIN, MANAGER and REP can inspect a scoped run and its recent activity,
+retry a `FAILED` or `RETRY_WAIT` run, or cancel `QUEUED`, `RUNNING` or
+`RETRY_WAIT` work. A cancelled run is terminal; cancellation fences a running
+owner. Manual retry resets the attempt budget and schedules the same run while
+retaining its last error, partial output and activity trail. Checkpoints preserve
+completed extraction and per-question outcomes across retry. Operator actions
+do not approve, deliver or send externally. Cancelling before the first claim
+records the action time as `startedAt` to satisfy the terminal-state database
+contract; it does not mean provider processing began.

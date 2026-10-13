@@ -6,6 +6,7 @@ import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
+import { performance } from 'node:perf_hooks'
 import jwt from 'jsonwebtoken'
 import { docxFixture, pdfFixture } from './documentFixtures'
 
@@ -69,12 +70,19 @@ try {
     body: JSON.stringify(body), signal: AbortSignal.timeout(30_000),
   })
   const upload = async (name: string, text: string | Buffer, type = 'text/plain') => {
+    const started = performance.now()
+    const rssBefore = process.memoryUsage().rss
     const form = new FormData()
     form.set('file', new Blob([typeof text === 'string' ? text : new Uint8Array(text)], { type }), name)
-    return fetch(`${base}/api/v1/documents/upload-file`, {
+    const result = await fetch(`${base}/api/v1/documents/upload-file`, {
       method: 'POST', headers: { authorization: `Bearer ${tokens[0]}` }, body: form,
       signal: AbortSignal.timeout(30_000),
     })
+    if (['policy.txt', 'policy.md', 'policy.pdf', 'policy.docx'].includes(name)) {
+      const bytes = typeof text === 'string' ? Buffer.byteLength(text) : text.length
+      console.log(`MEASURE upload ${name}: ${bytes} bytes, ${Math.round(performance.now() - started)} ms, RSS before/after ${Math.round(rssBefore / 1024 / 1024)}/${Math.round(process.memoryUsage().rss / 1024 / 1024)} MiB, status ${result.status}`)
+    }
+    return result
   }
   const original = 'Refund policy: refunds are available within thirty days of purchase.'
   const response = await upload('policy.txt', original)

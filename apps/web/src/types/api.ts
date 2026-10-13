@@ -172,6 +172,14 @@ export interface WorkflowRun {
   webhookEventId: string | null
   input?: unknown
   output?: unknown
+  activities?: Array<{
+    id: string
+    createdAt: string
+    kind: 'RECEIVED' | 'CLAIMED' | 'CHECKPOINT' | 'RETRY_WAIT' | 'FAILED' | 'COMPLETED' | 'RETRIED' | 'CANCELLED'
+    attemptCount: number
+    message: string | null
+    actorUserId: string | null
+  }>
   webhookEvent?: WebhookEventSummary | null
 }
 

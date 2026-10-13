@@ -32,6 +32,13 @@ export const processQueuedWorkflowRunsSchema = z.object({
   }),
 })
 
+export const workflowOperatorActionSchema = z.object({
+  params: z.object({ id: z.string().cuid('Invalid workflow run ID') }),
+  body: z.object({ reason: z.string().trim().min(1).max(500).optional() }).default({}),
+})
+
+export type WorkflowOperatorActionInput = z.infer<typeof workflowOperatorActionSchema>['body']
+
 export type ListWorkflowRunsQuery = z.infer<typeof listWorkflowRunsSchema>['query']
 export type ProcessQueuedWorkflowRunsInput = z.infer<
   typeof processQueuedWorkflowRunsSchema

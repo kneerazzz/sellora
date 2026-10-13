@@ -7,6 +7,7 @@ import { workflowRunsService } from './workflowRuns.service'
 import type {
   ListWorkflowRunsQuery,
   ProcessQueuedWorkflowRunsInput,
+  WorkflowOperatorActionInput,
 } from './workflowRuns.schema'
 
 const workflowProcessorRoles: UserRole[] = ['ADMIN', 'MANAGER', 'REP']
@@ -92,10 +93,25 @@ const processQueuedWorkflowRuns = asyncHandler(async (req: Request, res: Respons
   res.status(200).json(ApiResponse.ok('Queued workflow runs processed', workflowRuns))
 })
 
+function operatorAction(action: 'retry' | 'cancel') {
+  return asyncHandler(async (req: Request, res: Response) => {
+    const run = await workflowRunsService.operateWorkflowRun({
+      workflowRunId: req.params.id as string,
+      organizationId: getRequestOrganizationId(req),
+      actorUserId: req.user.id,
+      action,
+      reason: (req.body as WorkflowOperatorActionInput).reason,
+    })
+    res.status(200).json(ApiResponse.ok(`Workflow run ${action === 'retry' ? 'queued for retry' : 'cancelled'}`, run))
+  })
+}
+
 export const workflowRunsController = {
   listWorkflowRuns,
   getWorkflowRunById,
   processWorkflowRun,
   processNextQueuedWorkflowRun,
   processQueuedWorkflowRuns,
+  retryWorkflowRun: operatorAction('retry'),
+  cancelWorkflowRun: operatorAction('cancel'),
 }

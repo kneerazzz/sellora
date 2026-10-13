@@ -4,6 +4,7 @@ import { ApiResponse } from '../../utils/apiResponse'
 import { asyncHandler } from '../../utils/asyncHandler'
 import { webhooksService } from './webhooks.service'
 import { workflowRunsService } from '../workflowRuns/workflowRuns.service'
+import { ApiError } from '../../utils/apiError'
 import type { WebhookEventInput, WebhookEventQuery } from './webhooks.schema'
 
 const DEFAULT_SYNC_PROCESS_TIMEOUT_MS = 25_000
@@ -16,7 +17,8 @@ function getIdempotencyKey(req: Request): string | undefined {
     return undefined
   }
 
-  return idempotencyKey.slice(0, 200)
+  if (idempotencyKey.length > 200) throw ApiError.badRequest('Idempotency-Key is too long')
+  return idempotencyKey
 }
 
 async function withTimeout<T>(

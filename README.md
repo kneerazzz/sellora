@@ -1,6 +1,6 @@
 # Sellora — start here
 
-**Current state:** Parts 00/02/03/04/05 and packets 06A–06B complete locally as of **2026-10-12**; 01A scope written, buyer discovery pending. See [baseline evidence](docs/BASELINE.md), [evidence policy](docs/EVIDENCE_POLICY.md) and [development contract](docs/DEVELOPMENT.md).
+**Current state:** Parts 00/02/03/04/05 and packets 06A–06C complete locally as of **2026-10-13**; 06D queued ingestion deferred after local measurement. 01A scope written, buyer discovery pending. See [baseline evidence](docs/BASELINE.md), [evidence policy](docs/EVIDENCE_POLICY.md) and [development contract](docs/DEVELOPMENT.md).
 The detailed `PROJECT_REPORT.md` and `SELLORA_BUILD_PLAN.md` are local operator records excluded from Git. This README is the repository restart guide.
 
 ## What we are building
@@ -18,7 +18,7 @@ The goal is to try for one paid engagement in roughly two months; the original p
 - Committed repairs cover retrieval/refusal, embedding contracts, transactional ingestion, sessions and the staff draft UI. Baseline server checks and frontend production builds passed; see dated evidence below.
 - A forward migration preserves previous vectors and requires explicit re-ingestion; it has not been applied to a client database in this work.
 - The dashboard now has a sourced, editable draft/copy screen. Its edits and review checkbox are session-only; durable approval and approved answers remain missing.
-- Duplicate-event/operator recovery, document versions/deletion, integrations, invoice reconciliation and client operations remain incomplete. The public widget remains outside the first offer because its credential/rendering issues are open.
+- Document versions/deletion, integrations, invoice reconciliation and client operations remain incomplete. The public widget remains outside the first offer because its credential/rendering issues are open.
 - CRM remains a payload preview; saved n8n workflows are not verified production integrations.
 
 **Evidence boundary:** Part 02 passed clean app installs/client generation, server typecheck, 13/13 test files and both frontend builds. Disposable pgvector/pg15 tests passed Prisma deployment/repeat deployment, API health/401 boundary, empty-queue worker startup/shutdown, migration preservation, vector isolation, rollback and refresh races. Test containers/storage were removed; regular services remained. Hosted CI, authenticated upload/browser journeys, worker recovery, provider quality and client acceptance remain unverified.
@@ -45,11 +45,15 @@ Part 03 added real authenticated HTTP TXT/Markdown/PDF/DOCX upload/search, dupli
 
 06A separates workflow processing from human review and external delivery, preserves legacy review/failure records in a forward migration, and rejects unsupported CRM intake. Server tests and a full disposable migration/HTTP/SQL suite passed. A completed run is not approved or sent.
 
-06B adds PostgreSQL lease claims, heartbeats, stale-owner fencing, bounded retry/backoff and sequential worker polling. A disposable two-process claim race and killed-claimant restart passed; the full thirteen-migration suite and cleanup passed. The crash fixture uses claim-only processes, not a live-provider job. Duplicate-event identity and operator retry/cancel remain 06C.
+06B adds PostgreSQL lease claims, heartbeats, stale-owner fencing, bounded retry/backoff and sequential worker polling. A disposable two-process claim race and killed-claimant restart passed; the full thirteen-migration suite and cleanup passed. The crash fixture uses claim-only processes, not a live-provider job.
+
+06C adds organization/source/event-scoped webhook idempotency, payload mismatch conflicts, retained result checkpoints, scoped retry/cancel/detail activity and staff controls. Final server typecheck, 22/22 tests, web build, a synthetic-API Firefox UI check, and the fourteen-migration disposable HTTP/SQL suite passed, including concurrent duplicates, stale-owner fencing, retry/cancel races, historical activity and cleanup. No external send or live provider was exercised.
+
+06D disposition is **deferred**: small deterministic upload samples passed synchronously, but a first PDF parse took about 1.13 seconds and raised test-process RSS from 680 to 932 MiB. These are not capacity limits or client workload evidence. Keep synchronous ingestion for Part 07 and revisit queueing/parser isolation with representative files, concurrency and an agreed latency/resource threshold before larger client uploads.
 
 ## Next work
 
-Next action: **06C — idempotency and operator retry/cancel**, with the Part 05 Astra review still pending. The user explicitly requested local 06A/06B work; both passed on **2026-10-12**. A `gpt-6-astra` read-only review accepted the 04C.2 repair on **2026-10-10** with one low-priority break-glass exclusivity regression left as a follow-up. The local operator plan contains bounded task cards and checks.
+Next action: **pending Part 05/06 Astra review, then 07A — immutable source versions**. The user explicitly requested local 06C/06D work; 06C passed and 06D was deferred on **2026-10-13**. A `gpt-6-astra` read-only review accepted the 04C.2 repair on **2026-10-10** with one low-priority break-glass exclusivity regression left as a follow-up. The local operator plan contains bounded task cards and checks.
 
 [01A's working offer sheet](docs/FIRST_OFFER.md) is complete; 01B discovery and 01C pilot boundaries await user/buyer evidence. Preserve `apps/server/scripts/bulkIngest.ts`. Update status after each packet; commit only owned work locally after complete parts, without pushing. The October 3 planning expansion changes documentation only; no new application checks or acceptance are claimed.
 

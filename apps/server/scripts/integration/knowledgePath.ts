@@ -72,6 +72,12 @@ try {
   assert.equal(legacyFailed.status, 'FAILED')
   assert.ok(legacyFailed.completedAt)
   console.log('PASS legacy workflow review/failure state preserved with separate review and delivery')
+  const legacyActivity = await prisma.workflowRunActivity.findMany({
+    where: { workflowRunId: { in: ['legacy-review', 'legacy-failed'] } }, orderBy: { workflowRunId: 'asc' },
+  })
+  assert.deepEqual(legacyActivity.map(row => [row.workflowRunId, row.kind]),
+    [['legacy-failed', 'FAILED'], ['legacy-review', 'COMPLETED']])
+  console.log('PASS historical workflow outcomes retained in activity migration')
   const legacyUsage = await prisma.usageAttempt.findUniqueOrThrow({
     where: { traceId_component_attemptNumber: {
       traceId: 'legacy_trace_legacy-ai', component: 'legacy_ai_interaction', attemptNumber: 1,

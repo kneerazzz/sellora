@@ -65,6 +65,8 @@ route; do not infer new read permissions from its name.
 | POST /workflow-runs/:id/process | Y | Y | Y | — | Y | Y |
 | POST /workflow-runs/process-next | Y | Y | Y | — | — | — |
 | POST /workflow-runs/process-queued | Y | Y | Y | — | — | — |
+| POST /workflow-runs/:id/retry | Y | Y | Y | — | — | — |
+| POST /workflow-runs/:id/cancel | Y | Y | Y | — | — | — |
 | POST /crm-writeback/preview | Y | Y | Y | — | Y | Y |
 | POST /webhooks/email-received | — | — | — | — | Y | Y |
 | POST /webhooks/call-transcript | — | — | — | — | Y | Y |

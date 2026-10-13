@@ -16,6 +16,12 @@ export async function getWorkflowRun(id: string) {
   return data.data
 }
 
+export async function actOnWorkflowRun(id: string, action: 'retry' | 'cancel', reason?: string) {
+  const { data } = await apiClient.post<ApiResponse<WorkflowRun>>(`/workflow-runs/${id}/${action}`,
+    reason ? { reason } : {})
+  return data.data
+}
+
 export async function previewCrmWriteback(payload: {
   workflowRunId: string
   provider: IntegrationProvider
