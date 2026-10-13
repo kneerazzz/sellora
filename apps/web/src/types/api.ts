@@ -69,7 +69,6 @@ export interface Document {
   mimeType: string
   sizeBytes: number
   fileType: DocumentType
-  storagePath: string
   status: DocumentStatus
   errorMessage: string | null
   pageCount: number | null
@@ -81,6 +80,37 @@ export interface Document {
   tags: string[]
   organizationId: string
   uploadedById: string
+}
+
+export interface DocumentVersion {
+  id: string
+  versionNumber: number
+  basedOnVersionId: string | null
+  contentHash: string | null
+  status: 'BUILDING' | 'ACTIVE' | 'FAILED' | 'RETIRED'
+  errorMessage: string | null
+  createdAt: string
+  publishedAt: string | null
+  filename: string
+  mimeType: string
+  sizeBytes: number
+  pageCount: number | null
+  totalChunks: number | null
+}
+
+export interface SourceInspection {
+  versionId: string
+  versionNumber: number
+  availability: 'CURRENT' | 'STALE' | 'UNAVAILABLE'
+  truncated: boolean
+  chunks: Array<{
+    id: string
+    chunkIndex: number
+    text: string
+    pageNumber: number | null
+    headingPath: string[]
+    sectionTitle: string | null
+  }>
 }
 
 export type ApiKeyScope = 'READ_ONLY' | 'FULL_ACCESS' | 'WEBHOOK_ONLY'

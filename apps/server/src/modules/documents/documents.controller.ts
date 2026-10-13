@@ -11,6 +11,7 @@ import type {
   ReplaceDocumentTextInput,
   ReplaceDocumentFileInput,
   DeleteDocumentInput,
+  SourceReferencesInput,
 } from './documents.schema'
 import { randomUUID } from 'node:crypto'
 
@@ -104,6 +105,24 @@ const listDocumentVersions = asyncHandler(async (req: Request, res: Response) =>
   res.status(200).json(ApiResponse.ok('Document versions fetched', versions))
 })
 
+const resolveSourceReferences = asyncHandler(async (req: Request, res: Response) => {
+  const references = await documentsService.resolveSourceReferences(req.body as SourceReferencesInput,
+    req.user.organizationId)
+  res.status(200).json(ApiResponse.ok('Source references resolved', references))
+})
+
+const inspectDocumentVersion = asyncHandler(async (req: Request, res: Response) => {
+  const result = await documentsService.inspectDocumentVersion(req.params.id as string,
+    req.params.versionId as string, req.user.organizationId)
+  res.status(200).json(ApiResponse.ok('Document source inspected', result))
+})
+
+const previewDocumentErasure = asyncHandler(async (req: Request, res: Response) => {
+  const result = await documentsService.previewDocumentErasure(req.params.id as string,
+    req.user.organizationId)
+  res.status(200).json(ApiResponse.ok('Erasure dry run', result))
+})
+
 const retryDocumentVersion = asyncHandler(async (req: Request, res: Response) => {
   const document = await documentsService.retryDocumentVersion(req.params.id as string,
     req.params.versionId as string, req.user.organizationId, { requestId: randomUUID() })
@@ -126,6 +145,9 @@ export const documentsController = {
   replaceDocumentText,
   replaceDocumentFile,
   listDocumentVersions,
+  resolveSourceReferences,
+  inspectDocumentVersion,
+  previewDocumentErasure,
   retryDocumentVersion,
   deleteDocument,
 }

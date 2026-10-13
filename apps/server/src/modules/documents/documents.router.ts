@@ -14,6 +14,7 @@ import {
   replaceDocumentFileSchema,
   deleteDocumentSchema,
   documentVersionParamSchema,
+  sourceReferencesSchema,
 } from './documents.schema'
 
 export const documentsRouter = Router()
@@ -21,6 +22,7 @@ export const documentsRouter = Router()
 documentsRouter.use(authenticate)
 
 documentsRouter.get('/', validate(listDocumentsSchema), documentsController.listDocuments)
+documentsRouter.post('/resolve-references', validate(sourceReferencesSchema), documentsController.resolveSourceReferences)
 
 documentsRouter.post(
   '/',
@@ -58,6 +60,10 @@ documentsRouter.post(
 )
 
 documentsRouter.get('/:id/versions', validate(documentIdParamSchema), documentsController.listDocumentVersions)
+documentsRouter.get('/:id/versions/:versionId/source', validate(documentVersionParamSchema),
+  documentsController.inspectDocumentVersion)
+documentsRouter.get('/:id/erasure-preview', authorize('ADMIN'), validate(documentIdParamSchema),
+  documentsController.previewDocumentErasure)
 documentsRouter.post('/:id/replace-text', authorize('ADMIN', 'MANAGER'),
   validate(replaceDocumentTextSchema), documentsController.replaceDocumentText)
 documentsRouter.post('/:id/replace-file', authorize('ADMIN', 'MANAGER'),

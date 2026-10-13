@@ -86,6 +86,13 @@ export const deleteDocumentSchema = z.object({
 export const documentVersionParamSchema = z.object({
   params: documentIdParamSchema.shape.params.extend({ versionId: z.string().min(1).max(200) }),
 })
+export const sourceReferencesSchema = z.object({
+  body: z.object({ references: z.array(z.object({
+    documentId: z.string().min(1).max(200),
+    versionId: z.string().min(1).max(200),
+    chunkId: z.string().min(1).max(200),
+  })).min(1).max(50) }),
+})
 
 export type CreateDocumentInput = z.infer<typeof createDocumentSchema>['body']
 export type UploadDocumentInput = z.infer<typeof uploadDocumentSchema>['body']
@@ -95,3 +102,4 @@ export type IngestDocumentTextInput = z.infer<typeof ingestDocumentTextSchema>['
 export type ReplaceDocumentTextInput = z.infer<typeof replaceDocumentTextSchema>['body']
 export type ReplaceDocumentFileInput = z.infer<typeof replaceDocumentFileSchema>['body']
 export type DeleteDocumentInput = z.infer<typeof deleteDocumentSchema>['body']
+export type SourceReferencesInput = z.infer<typeof sourceReferencesSchema>['body']

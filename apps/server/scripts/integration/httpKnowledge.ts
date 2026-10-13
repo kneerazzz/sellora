@@ -185,6 +185,41 @@ try {
   assert.ok(history.every(version => /^[0-9a-f]{64}$/.test(version.contentHash)))
   assert.ok((await searchSimilarChunks({ organizationId: org.id, queryVector: vector, queryText: 'refund policy', documentIds: [id] }))
     .every(match => match.versionId === activeAfterRace))
+  const currentChunk = await prisma.documentChunk.findFirstOrThrow({ where: { documentId: id, versionId: activeAfterRace! } })
+  const retiredChunk = await prisma.documentChunk.findFirstOrThrow({ where: { documentId: id, versionId: originalActive! } })
+  const refs = [
+    { documentId: id, versionId: activeAfterRace!, chunkId: currentChunk.id },
+    { documentId: id, versionId: originalActive!, chunkId: retiredChunk.id },
+  ]
+  const resolved = await request('/resolve-references', { references: refs })
+  assert.equal(resolved.status, 200)
+  assert.deepEqual((await resolved.json() as { data: Array<{ availability: string }> }).data.map(ref => ref.availability),
+    ['CURRENT', 'STALE'])
+  const foreignResolved = await request('/resolve-references', { references: refs }, tokens[1])
+  assert.equal(foreignResolved.status, 200)
+  assert.ok((await foreignResolved.json() as { data: Array<{ availability: string; displayName?: string }> }).data
+    .every(ref => ref.availability === 'UNAVAILABLE' && !ref.displayName))
+  const staleInspection = await request(`/${id}/versions/${originalActive}/source`, undefined, tokens[0]!, 'GET')
+  assert.equal(staleInspection.status, 200)
+  assert.equal((await request(`/${id}/versions/${originalActive}/source`, undefined, tokens[1]!, 'GET')).status, 404)
+  assert.deepEqual((await staleInspection.json() as { data: { chunks: unknown[] } }).data.chunks, [])
+  const activeInspection = await request(`/${id}/versions/${activeAfterRace}/source`, undefined, tokens[0]!, 'GET')
+  assert.equal(activeInspection.status, 200)
+  assert.ok((await activeInspection.json() as { data: { chunks: Array<{ text: string }> } }).data.chunks[0]!.text.includes('Refund policy'))
+  await prisma.$executeRaw`INSERT INTO ai_interactions
+    (id,type,model,"promptTokens","completionTokens","totalTokens","latencyMs",
+      "userPrompt",response,"retrievedChunkIds","organizationId")
+    VALUES ('erasure-preview-fixture','CHAT_MESSAGE','fixture',1,1,2,1,
+      'fixture','fixture',ARRAY[${currentChunk.id}]::TEXT[],${org.id})`
+  const manifestResponse = await request(`/${id}/erasure-preview`, undefined, tokens[0]!, 'GET')
+  assert.equal(manifestResponse.status, 200)
+  const manifest = (await manifestResponse.json() as { data: { totals: { versions: number; chunks: number;
+    embeddings: number; originalFiles: number; aiInteractions: number }; executionAvailable: boolean } }).data
+  assert.ok(manifest.totals.versions >= 4 && manifest.totals.chunks >= 4 && manifest.totals.originalFiles >= 4)
+  assert.ok(manifest.totals.embeddings >= 4)
+  assert.equal(manifest.totals.aiInteractions, 1)
+  assert.equal(manifest.executionAvailable, false)
+  assert.equal((await request(`/${id}/erasure-preview`, undefined, tokens[1]!, 'GET')).status, 404)
   assert.ok((await prisma.documentChunk.findMany({ where: { documentId: id } })).every(chunk => !chunk.text.includes('Competing content')))
 
   for (const malformed of [undefined, [], [1, 2], vector.map(() => 0), vector.map(() => null), vector.map(() => '1'), vector.map((v, i) => i === 0 ? 1e309 : v)]) {
@@ -231,6 +266,10 @@ try {
   assert.equal((await request(`/${id}`, { expectedActiveVersionId: latest.activeVersionId }, tokens[1]!, 'DELETE')).status, 404)
   assert.equal((await request(`/${id}`, { expectedActiveVersionId: latest.activeVersionId }, tokens[0]!, 'DELETE')).status, 200)
   assert.deepEqual(await searchSimilarChunks({ organizationId: org.id, queryVector: vector, queryText: 'refund policy', documentIds: [id] }), [])
+  const deletedRefs = await request('/resolve-references', { references: refs })
+  assert.ok((await deletedRefs.json() as { data: Array<{ availability: string }> }).data.every(ref => ref.availability === 'UNAVAILABLE'))
+  const deletedSource = await request(`/${id}/versions/${latest.activeVersionId}/source`, undefined, tokens[0]!, 'GET')
+  assert.deepEqual((await deletedSource.json() as { data: { chunks: unknown[] } }).data.chunks, [])
   assert.equal((await request(`/${id}/replace-text`, { text: original, expectedActiveVersionId: latest.activeVersionId })).status, 409)
   const deletionRaceUpload = await upload('deletion-race.txt', original)
   assert.equal(deletionRaceUpload.status, 201)

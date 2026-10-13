@@ -25,6 +25,7 @@ import type {
   ListDocumentsQuery,
   MultipartDocumentFieldsInput,
   UploadDocumentInput,
+  SourceReferencesInput,
 } from './documents.schema'
 import { withWorkloadReservation } from '../usage/workloadReservations.service'
 import { withRecordedUsageAttempt } from '../usage/usageLedger.service'
@@ -39,7 +40,6 @@ const documentSelect = {
   mimeType: true,
   sizeBytes: true,
   fileType: true,
-  storagePath: true,
   status: true,
   errorMessage: true,
   pageCount: true,
@@ -567,6 +567,83 @@ async function listDocumentVersions(documentId: string, organizationId: string) 
     orderBy: { versionNumber: 'desc' } })
 }
 
+async function resolveSourceReferences(input: SourceReferencesInput, organizationId: string) {
+  const documentIds = [...new Set(input.references.map(reference => reference.documentId))]
+  const chunkIds = [...new Set(input.references.map(reference => reference.chunkId))]
+  const documents = await prisma.document.findMany({ where: { id: { in: documentIds }, organizationId },
+    select: { id: true, activeVersionId: true, deletedAt: true, displayName: true } })
+  const chunks = await prisma.documentChunk.findMany({ where: { id: { in: chunkIds },
+    document: { organizationId } }, select: { id: true, documentId: true, versionId: true,
+      chunkIndex: true, pageNumber: true, headingPath: true, sectionTitle: true,
+      version: { select: { status: true } } } })
+  const byDocument = new Map(documents.map(document => [document.id, document]))
+  const byChunk = new Map(chunks.map(chunk => [chunk.id, chunk]))
+  return input.references.map(reference => {
+    const document = byDocument.get(reference.documentId)
+    const chunk = byChunk.get(reference.chunkId)
+    const valid = document && chunk && chunk.documentId === reference.documentId &&
+      chunk.versionId === reference.versionId
+    const availability = !valid || document.deletedAt ? 'UNAVAILABLE'
+      : document.activeVersionId === reference.versionId && chunk.version.status === 'ACTIVE' ? 'CURRENT'
+      : chunk.version.status === 'RETIRED' ? 'STALE' : 'UNAVAILABLE'
+    return { ...reference, availability,
+      ...(valid && !document.deletedAt ? { displayName: document.displayName,
+        location: { chunkIndex: chunk.chunkIndex, pageNumber: chunk.pageNumber,
+          headingPath: chunk.headingPath, sectionTitle: chunk.sectionTitle } } : {}),
+    }
+  })
+}
+
+async function inspectDocumentVersion(documentId: string, versionId: string, organizationId: string) {
+  const document = await prisma.document.findFirst({ where: { id: documentId, organizationId },
+    select: { activeVersionId: true, deletedAt: true } })
+  if (!document) throw ApiError.notFound('Document not found')
+  const version = await prisma.documentVersion.findFirst({ where: { id: versionId, documentId, organizationId },
+    select: { id: true, status: true, versionNumber: true } })
+  if (!version) throw ApiError.notFound('Document version not found')
+  const availability = document.deletedAt ? 'UNAVAILABLE'
+    : document.activeVersionId === versionId && version.status === 'ACTIVE' ? 'CURRENT'
+    : version.status === 'RETIRED' ? 'STALE' : 'UNAVAILABLE'
+  const chunks = availability === 'CURRENT' ? await prisma.documentChunk.findMany({
+    where: { documentId, versionId }, orderBy: { chunkIndex: 'asc' }, take: 101,
+    select: { id: true, chunkIndex: true, text: true, pageNumber: true,
+      headingPath: true, sectionTitle: true },
+  }) : []
+  return { versionId, versionNumber: version.versionNumber, availability, chunks: chunks.slice(0, 100),
+    truncated: chunks.length > 100 }
+}
+
+async function previewDocumentErasure(documentId: string, organizationId: string) {
+  const document = await prisma.document.findFirst({ where: { id: documentId, organizationId },
+    select: { id: true, deletedAt: true, activeVersionId: true } })
+  if (!document) throw ApiError.notFound('Document not found')
+  const versions = await prisma.documentVersion.findMany({ where: { documentId, organizationId },
+    select: { id: true, status: true, storagePath: true, sizeBytes: true,
+      _count: { select: { chunks: true } } }, orderBy: { versionNumber: 'asc' } })
+  const vectorCounts = await prisma.$queryRaw<Array<{ chunks: bigint; embeddings: bigint; legacyEmbeddings: bigint }>>`
+    SELECT count(*) AS chunks, count(*) FILTER (WHERE embedding IS NOT NULL) AS embeddings,
+      count(*) FILTER (WHERE "legacyEmbedding" IS NOT NULL) AS "legacyEmbeddings"
+    FROM document_chunks WHERE "documentId" = ${documentId}`
+  const interactionCounts = await prisma.$queryRaw<Array<{ count: bigint }>>`
+    SELECT count(*) FROM ai_interactions ai WHERE ai."organizationId" = ${organizationId}
+      AND (ai."documentId" = ${documentId} OR EXISTS (
+        SELECT 1 FROM document_chunks c WHERE c."documentId" = ${documentId}
+          AND c.id = ANY(ai."retrievedChunkIds")))`
+  const root = path.resolve(env.DOCUMENT_STORAGE_DIR)
+  const originals = [...new Map(versions.map(version => [version.storagePath, version.sizeBytes])).entries()]
+  return { documentId, deleted: !!document.deletedAt, activeVersionId: document.activeVersionId,
+    versions: versions.map(version => ({ id: version.id, status: version.status,
+      chunkCount: version._count.chunks })),
+    totals: { versions: versions.length, chunks: Number(vectorCounts[0]?.chunks ?? 0n),
+      embeddings: Number(vectorCounts[0]?.embeddings ?? 0n),
+      legacyEmbeddings: Number(vectorCounts[0]?.legacyEmbeddings ?? 0n),
+      originalFiles: originals.length, originalBytes: originals.reduce((sum, [, bytes]) => sum + bytes, 0),
+      aiInteractions: Number(interactionCounts[0]?.count ?? 0n),
+      unmanagedOriginalPaths: originals.filter(([file]) => !path.resolve(file).startsWith(`${root}${path.sep}`)).length },
+    externalSurfaces: ['workflow_json', 'logs', 'caches', 'exports', 'backups', 'external_copies'],
+    executionAvailable: false }
+}
+
 async function retryDocumentVersion(documentId: string, versionId: string, organizationId: string,
   correlation: { requestId?: string } = {}) {
   const version = await prisma.documentVersion.findFirst({
@@ -639,6 +716,9 @@ export const documentsService = {
   replaceDocumentText,
   replaceMultipartDocument,
   listDocumentVersions,
+  resolveSourceReferences,
+  inspectDocumentVersion,
+  previewDocumentErasure,
   retryDocumentVersion,
   deleteDocument,
 }

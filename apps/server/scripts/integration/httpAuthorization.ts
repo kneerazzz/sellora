@@ -165,6 +165,14 @@ try {
     } },
     { method: 'POST', route: `/documents/${ownDoc.id}/ingest-text`, allow: managers, body: { text: 'Refund policy permits refunds within thirty days.' } },
     { method: 'GET', route: `/documents/${ownDoc.id}/versions`, allow: staff },
+    { method: 'POST', route: '/documents/resolve-references', allow: staff,
+      setup: async () => { const doc = await prisma.document.findUniqueOrThrow({ where: { id: ownDoc.id } })
+        const chunk = await prisma.documentChunk.findFirstOrThrow({ where: { versionId: doc.activeVersionId! } })
+        return { body: { references: [{ documentId: doc.id, versionId: doc.activeVersionId, chunkId: chunk.id }] } } } },
+    { method: 'GET', route: '/documents/:id/versions/:versionId/source', allow: staff,
+      setup: async () => { const doc = await prisma.document.findUniqueOrThrow({ where: { id: ownDoc.id } })
+        return { route: `/documents/${doc.id}/versions/${doc.activeVersionId}/source` } } },
+    { method: 'GET', route: `/documents/${ownDoc.id}/erasure-preview`, allow: ['ADMIN'] },
     { method: 'POST', route: `/documents/${ownDoc.id}/replace-text`, allow: managers,
       setup: async () => ({ body: { text: 'Refund policy permits refunds within thirty days.',
         expectedActiveVersionId: (await prisma.document.findUniqueOrThrow({ where: { id: ownDoc.id } })).activeVersionId } }) },
