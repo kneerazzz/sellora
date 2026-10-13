@@ -12,6 +12,7 @@ const { ProviderOperationError } = await import('../../services/provider/provide
 const source = {
   chunkId: 'chunk-1', text: 'Enterprise customers can enable SAML SSO using their identity provider.',
   chunkIndex: 0, pageNumber: null, headingPath: [], sectionTitle: null,
+  versionId: 'version-1', sourceHeadingPath: [], sourceSectionTitle: null,
   documentId: 'document-1', displayName: 'Security guide', filename: 'security.md', score: 2 / 61,
 }
 function fixture(options: { matches?: typeof source[]; text?: string; outage?: boolean } = {}) {
@@ -22,7 +23,7 @@ function fixture(options: { matches?: typeof source[]; text?: string; outage?: b
       aiInteraction: { create: async () => ({ id: 'interaction-1' }) },
       documentChunk: { findMany: async (input: any) => {
         localQueries.push(input)
-        return [{ ...source, id: source.chunkId, document: { id: source.documentId, displayName: source.displayName, filename: source.filename } }]
+        return [{ ...source, id: source.chunkId, document: { id: source.documentId, activeVersionId: source.versionId, displayName: source.displayName, filename: source.filename } }]
       } },
     } as any,
     hasEmbeddingsConfigured: () => true,
@@ -122,7 +123,8 @@ describe('grounded answers with offline dependencies', () => {
     const f = fixture({ outage: true })
     assert.equal((await f.service.answerQuestion({ question: 'refund policy?' }, { organizationId: 'org-b' })).refused, true)
     assert.equal(f.localQueries[0].where.document.organizationId, 'org-b')
-    assert.equal(f.localQueries[0].where.document.status, 'COMPLETED')
+    assert.deepEqual(f.localQueries[0].where.document.activeVersionId, { not: null })
+    assert.equal(f.localQueries[0].where.document.deletedAt, null)
   })
   for (const outage of [false, true]) {
     it(`refuses partially covered multi-part questions (fallback=${outage})`, async () => {
@@ -136,7 +138,7 @@ describe('grounded answers with offline dependencies', () => {
     const f = fixture({ outage: true })
     await f.service.answerQuestion({ question: 'SAML SSO?', documentIds: ['document-1'] }, { organizationId: 'org-a' })
     assert.deepEqual(f.localQueries[0].where.document, {
-      organizationId: 'org-a', status: 'COMPLETED', id: { in: ['document-1'] },
+      organizationId: 'org-a', deletedAt: null, activeVersionId: { not: null }, id: { in: ['document-1'] },
     })
   })
   it('does not turn provider cancellation or deadline failure into a successful local fallback', async () => {

@@ -128,8 +128,11 @@ export function createGroundedAnswersService(overrides: Partial<typeof defaultDe
           documentName: chunk.displayName,
           filename: chunk.filename,
           chunkId: chunk.chunkId,
+          versionId: chunk.versionId,
           chunkIndex: chunk.chunkIndex,
           pageNumber: chunk.pageNumber,
+          headingPath: chunk.sourceHeadingPath,
+          sectionTitle: chunk.sourceSectionTitle,
           score: rankedResults.find((r) => r.item.chunkId === chunk.chunkId)?.combinedScore ?? chunk.score,
           snippet: buildSnippet(chunk.text),
         }))
@@ -176,9 +179,11 @@ export function createGroundedAnswersService(overrides: Partial<typeof defaultDe
 
     const chunks = await prisma.documentChunk.findMany({
       where: {
+        version: { status: 'ACTIVE' },
         document: {
           organizationId: context.organizationId,
-          status: 'COMPLETED',
+          deletedAt: null,
+          activeVersionId: { not: null },
           ...(input.documentIds && { id: { in: input.documentIds } }),
         },
       },
@@ -187,11 +192,15 @@ export function createGroundedAnswersService(overrides: Partial<typeof defaultDe
         text: true,
         chunkIndex: true,
         pageNumber: true,
+        headingPath: true,
+        sectionTitle: true,
+        versionId: true,
         document: {
           select: {
             id: true,
             displayName: true,
             filename: true,
+            activeVersionId: true,
           },
         },
       },
@@ -206,6 +215,7 @@ export function createGroundedAnswersService(overrides: Partial<typeof defaultDe
         chunk,
         score: questionTokens.length > 0 ? scoreByTokenOverlap(questionTokens, chunk.text) : 0,
       }))
+      .filter(({ chunk }) => chunk.versionId === chunk.document.activeVersionId)
       .filter((item) => hasQuestionEvidence(input.question, item.chunk.text))
       .sort((a, b) => b.score - a.score)
       .slice(0, maxCitations)
@@ -219,8 +229,11 @@ export function createGroundedAnswersService(overrides: Partial<typeof defaultDe
       documentName: chunk.document.displayName,
       filename: chunk.document.filename,
       chunkId: chunk.id,
+      versionId: chunk.versionId,
       chunkIndex: chunk.chunkIndex,
       pageNumber: chunk.pageNumber,
+      headingPath: chunk.headingPath,
+      sectionTitle: chunk.sectionTitle,
       score,
       snippet: buildSnippet(chunk.text),
     }))

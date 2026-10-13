@@ -10,6 +10,10 @@ import {
   listDocumentsSchema,
   multipartDocumentFieldsSchema,
   uploadDocumentSchema,
+  replaceDocumentTextSchema,
+  replaceDocumentFileSchema,
+  deleteDocumentSchema,
+  documentVersionParamSchema,
 } from './documents.schema'
 
 export const documentsRouter = Router()
@@ -52,3 +56,13 @@ documentsRouter.post(
   validate(ingestDocumentTextSchema),
   documentsController.ingestDocumentText
 )
+
+documentsRouter.get('/:id/versions', validate(documentIdParamSchema), documentsController.listDocumentVersions)
+documentsRouter.post('/:id/replace-text', authorize('ADMIN', 'MANAGER'),
+  validate(replaceDocumentTextSchema), documentsController.replaceDocumentText)
+documentsRouter.post('/:id/replace-file', authorize('ADMIN', 'MANAGER'),
+  documentUpload.single('file'), validate(replaceDocumentFileSchema), documentsController.replaceDocumentFile)
+documentsRouter.post('/:id/versions/:versionId/retry', authorize('ADMIN', 'MANAGER'),
+  validate(documentVersionParamSchema), documentsController.retryDocumentVersion)
+documentsRouter.delete('/:id', authorize('ADMIN', 'MANAGER'),
+  validate(deleteDocumentSchema), documentsController.deleteDocument)

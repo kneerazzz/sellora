@@ -50,9 +50,9 @@ try {
   const indexes = await client.query("SELECT indexname FROM pg_indexes WHERE tablename='document_chunks'")
   assert.ok(indexes.rows.some(row => row.indexname === 'document_chunks_pkey'))
   assert.ok(indexes.rows.some(row => row.indexname === 'document_chunks_documentId_chunkIndex_key'))
-  const oldDoc = await prisma.document.findUniqueOrThrow({ where: { id: 'doc-a' } })
-  assert.equal(oldDoc.status, 'FAILED')
-  assert.equal(oldDoc.storagePath, '/disposable-original-a')
+  const oldDoc = await client.query('SELECT status,"storagePath" FROM documents WHERE id=$1', ['doc-a'])
+  assert.equal(oldDoc.rows[0].status, 'FAILED')
+  assert.equal(oldDoc.rows[0].storagePath, '/disposable-original-a')
   console.log('PASS historical migration replay and non-destructive forward upgrade')
   for (const migration of migrations.filter((name) => name > forward)) {
     if (migration === '20261012031000_workflow_state_contract') {
@@ -61,7 +61,16 @@ try {
         ('legacy-review',NOW(),'GROUNDED_TECHNICAL_ANSWER','NEEDS_REVIEW','{}','org-a'),
         ('legacy-failed',NOW(),'SALES_EVENT_EXTRACTION','FAILED','{}','org-a')`)
     }
-    await client.query(await readFile(`prisma/migrations/${migration}/migration.sql`, 'utf8'))
+    const sql = await readFile(`prisma/migrations/${migration}/migration.sql`, 'utf8')
+    if (migration === '20261013010000_document_versions') {
+      // PostgreSQL requires a new enum value to commit before a later SQL
+      // fixture statement uses it; Prisma deploy also commits this boundary.
+      const firstStatementEnd = sql.indexOf(';') + 1
+      await client.query(sql.slice(0, firstStatementEnd))
+      await client.query(sql.slice(firstStatementEnd))
+    } else {
+      await client.query(sql)
+    }
   }
   const legacyReview = await prisma.workflowRun.findUniqueOrThrow({ where: { id: 'legacy-review' } })
   assert.equal(legacyReview.status, 'COMPLETED')
@@ -78,6 +87,20 @@ try {
   assert.deepEqual(legacyActivity.map(row => [row.workflowRunId, row.kind]),
     [['legacy-failed', 'FAILED'], ['legacy-review', 'COMPLETED']])
   console.log('PASS historical workflow outcomes retained in activity migration')
+  const legacyVersion = await prisma.documentVersion.findUniqueOrThrow({ where: { id: 'legacy-doc-a' } })
+  assert.equal(legacyVersion.contentHash, null)
+  assert.equal(legacyVersion.storagePath, '/disposable-original-a')
+  assert.equal((await prisma.documentChunk.findUniqueOrThrow({ where: { id: 'legacy-a' } })).versionId, legacyVersion.id)
+  await assert.rejects(prisma.$executeRawUnsafe(
+    'UPDATE document_versions SET "contentHash" = $1 WHERE id = $2',
+    '0'.repeat(64), legacyVersion.id,
+  ))
+  await assert.rejects(client.query(`INSERT INTO document_versions
+    (id,"documentId","organizationId","versionNumber",filename,"mimeType","sizeBytes","fileType","storagePath",status)
+    VALUES ('new-without-hash','doc-a','org-a',99,'a.txt','text/plain',10,'TXT','/disposable-original-a','BUILDING')`))
+  const versionIndexes = await client.query("SELECT indexname FROM pg_indexes WHERE tablename='document_chunks'")
+  assert.ok(versionIndexes.rows.some(row => row.indexname === 'document_chunks_versionId_chunkIndex_key'))
+  console.log('PASS legacy source/chunk IDs, vector and original preserved in version backfill')
   const legacyUsage = await prisma.usageAttempt.findUniqueOrThrow({
     where: { traceId_component_attemptNumber: {
       traceId: 'legacy_trace_legacy-ai', component: 'legacy_ai_interaction', attemptNumber: 1,
@@ -94,8 +117,23 @@ try {
   const { createGroundedAnswersService } = await import('../../src/modules/groundedAnswers/groundedAnswers.service')
   const vector = Array.from({ length: 768 }, (_, index) => index === 0 ? 1 : 0)
   const chunks = await structureAwareChunk('Refund policy: refunds are available within thirty days of purchase.')
+  const makeCandidate = async (documentId: string, organizationId: string) => {
+    const document = await prisma.document.findUniqueOrThrow({ where: { id: documentId } })
+    const version = await prisma.documentVersion.create({ data: {
+      documentId, organizationId, versionNumber: document.nextVersionNumber,
+      basedOnVersionId: document.activeVersionId,
+      contentHash: '0'.repeat(64),
+      filename: document.filename, mimeType: document.mimeType,
+      sizeBytes: document.sizeBytes, fileType: document.fileType,
+      storagePath: document.storagePath, status: 'BUILDING',
+    } })
+    await prisma.document.update({ where: { id: documentId }, data: { nextVersionNumber: { increment: 1 } } })
+    return { versionId: version.id, expectedActiveVersionId: document.activeVersionId }
+  }
   for (const documentId of ['doc-a', 'doc-b']) {
-    await prisma.$transaction((tx) => persistIngestedChunks(tx, { documentId, chunks, embeddings: chunks.map(() => vector), isReingest: true }, upsertChunkEmbeddings))
+    const candidate = await makeCandidate(documentId, documentId === 'doc-a' ? 'org-a' : 'org-b')
+    await prisma.$transaction((tx) => persistIngestedChunks(tx, { documentId, ...candidate,
+      chunks, embeddings: chunks.map(() => vector) }, upsertChunkEmbeddings))
   }
   const ready = await prisma.document.findUniqueOrThrow({ where: { id: 'doc-a' } })
   assert.equal(ready.status, 'COMPLETED')
@@ -105,23 +143,24 @@ try {
   assert.ok(matches.every((match) => match.documentId === 'doc-a'))
   assert.deepEqual(await searchSimilarChunks({ organizationId: 'org-a', queryVector: vector, queryText: 'refund policy', documentIds: ['doc-b'] }), [])
   assert.deepEqual(await searchSimilarChunks({ organizationId: 'org-a', queryVector: vector, queryText: 'refund policy', documentIds: [] }), [])
-  await prisma.document.update({ where: { id: 'doc-a' }, data: { status: 'FAILED' } })
+  await prisma.document.update({ where: { id: 'doc-a' }, data: { status: 'DELETED', deletedAt: new Date() } })
   assert.deepEqual(await searchSimilarChunks({ organizationId: 'org-a', queryVector: vector, queryText: 'refund policy' }), [])
-  await prisma.document.update({ where: { id: 'doc-a' }, data: { status: 'COMPLETED' } })
-  const readyAfterStatusCheck = await prisma.document.findUniqueOrThrow({ where: { id: 'doc-a' } })
+  await prisma.document.update({ where: { id: 'doc-a' }, data: { status: 'COMPLETED', deletedAt: null } })
   console.log('PASS chunking, atomic persistence, 768-dimensional vector search and organization isolation')
 
   const before = await prisma.documentChunk.findMany({ where: { documentId: 'doc-a' } })
   const vectorsBefore = await client.query('SELECT id, embedding::text FROM document_chunks WHERE "documentId"=$1 ORDER BY id', ['doc-a'])
+  const candidate = await makeCandidate('doc-a', 'org-a')
+  const readyAfterStatusCheck = await prisma.document.findUniqueOrThrow({ where: { id: 'doc-a' } })
   for (const embeddings of [[], [...chunks.map(() => vector), vector]]) {
     await assert.rejects(prisma.$transaction(tx => persistIngestedChunks(tx,
-      { documentId: 'doc-a', chunks, embeddings, isReingest: true }, upsertChunkEmbeddings)), /Embedding count mismatch/)
+      { documentId: 'doc-a', ...candidate, chunks, embeddings }, upsertChunkEmbeddings)), /Embedding count mismatch/)
     assert.deepEqual(await prisma.documentChunk.findMany({ where: { documentId: 'doc-a' } }), before)
     assert.deepEqual(await prisma.document.findUniqueOrThrow({ where: { id: 'doc-a' } }), readyAfterStatusCheck)
   }
   console.log('PASS missing/extra vector count rejected before transactional replacement')
   await assert.rejects(prisma.$transaction((tx) => persistIngestedChunks(tx,
-    { documentId: 'doc-a', chunks, embeddings: chunks.map(() => vector), isReingest: true },
+    { documentId: 'doc-a', ...candidate, chunks, embeddings: chunks.map(() => vector) },
     async (rows, transaction) => { await upsertChunkEmbeddings(rows, transaction); throw new Error('injected interruption') })), /injected interruption/)
   const after = await prisma.documentChunk.findMany({ where: { documentId: 'doc-a' } })
   assert.deepEqual(after, before)

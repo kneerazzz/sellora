@@ -1,5 +1,12 @@
 # Knowledge upgrade and bounded rebuild
 
+**Historical Part 03 runbook:** the rebuild instructions below describe the
+pre-versioned schema. Part 07A/07B now preserves chunk versions and changes
+`ingest-text` into a versioned replacement. Consult [the source contract](SOURCE_CONTRACT.md)
+and current migration history before any future upgrade; do not apply the
+pre-versioned index, chunk-replacement or status assumptions below to a Part 07
+database.
+
 Supported paths: a new empty PostgreSQL/pgvector database replaying all migrations,
 or an existing database whose applied history ends at
 `20260626000000_add_webhook_idempotency_key` and whose active embedding column is

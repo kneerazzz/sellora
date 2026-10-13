@@ -26,6 +26,7 @@ model Organization {
   apiKeys          ApiKey[]
   deals            Deal[]
   documents        Document[]
+  documentVersions DocumentVersion[]
   externalMappings ExternalObjectMapping[]
   integrations     Integration[]
   invites          Invite[]
@@ -129,18 +130,54 @@ model Document {
   embeddingModel String?
   ingestedAt     DateTime?
   jobId          String?
+  activeVersionId String?
+  nextVersionNumber Int @default(1)
+  deletedAt      DateTime?
   tags           String[]
   organizationId String
   uploadedById   String
   aiInteractions AiInteraction[]
   chunks         DocumentChunk[]
+  versions       DocumentVersion[]
   organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   uploadedBy     User            @relation(fields: [uploadedById], references: [id])
 
   @@index([organizationId])
   @@index([status])
   @@index([uploadedById])
+  @@unique([id, organizationId])
   @@map("documents")
+}
+
+model DocumentVersion {
+  id             String @id @default(cuid())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  documentId     String
+  organizationId String
+  versionNumber  Int
+  basedOnVersionId String?
+  contentHash    String?
+  filename       String
+  mimeType       String
+  sizeBytes      Int
+  fileType       DocumentType
+  storagePath    String
+  status         DocumentVersionStatus @default(BUILDING)
+  errorMessage   String?
+  pageCount      Int?
+  totalChunks    Int?
+  embeddingModel String?
+  publishedAt    DateTime?
+  chunks         DocumentChunk[]
+  document       Document @relation(fields: [documentId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, versionNumber])
+  @@unique([id, documentId])
+  @@unique([id, documentId, organizationId])
+  @@index([organizationId, documentId])
+  @@map("document_versions")
 }
 
 model DocumentChunk {
@@ -151,14 +188,16 @@ model DocumentChunk {
   tokenCount    Int
   pageNumber    Int?
   documentId    String
+  versionId     String
   headingPath   String[]
   overlapTokens Int                    @default(0)
   sectionTitle  String?
   embedding     Unsupported("vector(768)")?
   legacyEmbedding Unsupported("vector(384)")?
   document      Document               @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  version       DocumentVersion        @relation(fields: [versionId, documentId], references: [id, documentId], onDelete: Cascade)
 
-  @@unique([documentId, chunkIndex])
+  @@unique([versionId, chunkIndex])
   @@index([documentId])
   @@map("document_chunks")
 }
@@ -569,6 +608,14 @@ enum DocumentStatus {
   PROCESSING
   COMPLETED
   FAILED
+  DELETED
+}
+
+enum DocumentVersionStatus {
+  BUILDING
+  ACTIVE
+  FAILED
+  RETIRED
 }
 
 enum DocumentType {

@@ -8,6 +8,9 @@ import type {
   ListDocumentsQuery,
   MultipartDocumentFieldsInput,
   UploadDocumentInput,
+  ReplaceDocumentTextInput,
+  ReplaceDocumentFileInput,
+  DeleteDocumentInput,
 } from './documents.schema'
 import { randomUUID } from 'node:crypto'
 
@@ -82,6 +85,37 @@ const ingestDocumentText = asyncHandler(async (req: Request, res: Response) => {
   res.status(200).json(ApiResponse.ok('Document ingested', document))
 })
 
+const replaceDocumentText = asyncHandler(async (req: Request, res: Response) => {
+  const input = req.body as ReplaceDocumentTextInput
+  const document = await documentsService.replaceDocumentText(req.params.id as string, input,
+    req.user.organizationId, input.expectedActiveVersionId, { requestId: randomUUID() })
+  res.status(200).json(ApiResponse.ok('Document replacement published', document))
+})
+
+const replaceDocumentFile = asyncHandler(async (req: Request, res: Response) => {
+  const document = await documentsService.replaceMultipartDocument(req.params.id as string,
+    req.file, req.body as ReplaceDocumentFileInput,
+    { organizationId: req.user.organizationId, userId: req.user.id, requestId: randomUUID() })
+  res.status(200).json(ApiResponse.ok('Document replacement published', document))
+})
+
+const listDocumentVersions = asyncHandler(async (req: Request, res: Response) => {
+  const versions = await documentsService.listDocumentVersions(req.params.id as string, req.user.organizationId)
+  res.status(200).json(ApiResponse.ok('Document versions fetched', versions))
+})
+
+const retryDocumentVersion = asyncHandler(async (req: Request, res: Response) => {
+  const document = await documentsService.retryDocumentVersion(req.params.id as string,
+    req.params.versionId as string, req.user.organizationId, { requestId: randomUUID() })
+  res.status(200).json(ApiResponse.ok('Document version published', document))
+})
+
+const deleteDocument = asyncHandler(async (req: Request, res: Response) => {
+  const document = await documentsService.deleteDocument(req.params.id as string,
+    req.user.organizationId, (req.body as DeleteDocumentInput).expectedActiveVersionId)
+  res.status(200).json(ApiResponse.ok('Document deleted', document))
+})
+
 export const documentsController = {
   createDocument,
   uploadDocument,
@@ -89,4 +123,9 @@ export const documentsController = {
   listDocuments,
   getDocumentById,
   ingestDocumentText,
+  replaceDocumentText,
+  replaceDocumentFile,
+  listDocumentVersions,
+  retryDocumentVersion,
+  deleteDocument,
 }

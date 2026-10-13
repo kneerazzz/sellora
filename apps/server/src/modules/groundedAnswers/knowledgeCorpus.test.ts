@@ -59,12 +59,13 @@ describe('versioned offline knowledge corpus', () => {
           prisma: {
             documentChunk: { findMany: async (args: any) => {
               assert.deepEqual(args.where.document, {
-                organizationId: test.organizationId, status: 'COMPLETED',
+                organizationId: test.organizationId, deletedAt: null, activeVersionId: { not: null },
                 ...(test.documentIds !== undefined && { id: { in: test.documentIds } }),
               })
               return eligible().map(source => ({
                 id: `${source.id}-chunk-0`, text: source.text, chunkIndex: 0, pageNumber: null,
-                document: { id: source.id, displayName: source.id, filename: `${source.id}.txt` },
+                versionId: `${source.id}-version-1`, headingPath: [], sectionTitle: null,
+                document: { id: source.id, activeVersionId: `${source.id}-version-1`, displayName: source.id, filename: `${source.id}.txt` },
               }))
             } },
             aiInteraction: { create: async ({ data }: any) => { saved.push(data); return { id: 'offline-interaction' } } },
@@ -84,6 +85,7 @@ describe('versioned offline knowledge corpus', () => {
             return eligible().map(source => ({
               chunkId: `${source.id}-chunk-0`, documentId: source.id, text: source.text,
               chunkIndex: 0, pageNumber: null, headingPath: [], sectionTitle: null,
+              versionId: `${source.id}-version-1`, sourceHeadingPath: [], sourceSectionTitle: null,
               filename: `${source.id}.txt`, displayName: source.id, score: 2 / 61,
             }))
           },

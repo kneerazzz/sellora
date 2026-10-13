@@ -68,8 +68,30 @@ export const ingestDocumentTextSchema = z.object({
   }),
 })
 
+const expectedVersion = z.string().min(1).max(200).nullable()
+export const replaceDocumentTextSchema = z.object({
+  params: documentIdParamSchema.shape.params,
+  body: ingestDocumentTextSchema.shape.body.extend({ expectedActiveVersionId: expectedVersion }),
+})
+export const replaceDocumentFileSchema = z.object({
+  params: documentIdParamSchema.shape.params,
+  body: multipartDocumentFieldsSchema.shape.body.extend({
+    expectedActiveVersionId: z.preprocess(value => value === 'null' || value === '' ? null : value, expectedVersion),
+  }),
+})
+export const deleteDocumentSchema = z.object({
+  params: documentIdParamSchema.shape.params,
+  body: z.object({ expectedActiveVersionId: expectedVersion }),
+})
+export const documentVersionParamSchema = z.object({
+  params: documentIdParamSchema.shape.params.extend({ versionId: z.string().min(1).max(200) }),
+})
+
 export type CreateDocumentInput = z.infer<typeof createDocumentSchema>['body']
 export type UploadDocumentInput = z.infer<typeof uploadDocumentSchema>['body']
 export type MultipartDocumentFieldsInput = z.infer<typeof multipartDocumentFieldsSchema>['body']
 export type ListDocumentsQuery = z.infer<typeof listDocumentsSchema>['query']
 export type IngestDocumentTextInput = z.infer<typeof ingestDocumentTextSchema>['body']
+export type ReplaceDocumentTextInput = z.infer<typeof replaceDocumentTextSchema>['body']
+export type ReplaceDocumentFileInput = z.infer<typeof replaceDocumentFileSchema>['body']
+export type DeleteDocumentInput = z.infer<typeof deleteDocumentSchema>['body']

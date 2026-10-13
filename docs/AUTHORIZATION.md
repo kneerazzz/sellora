@@ -48,6 +48,11 @@ route; do not infer new read permissions from its name.
 | POST /documents/upload | Y | Y | — | — | — | — |
 | POST /documents/upload-file | Y | Y | — | — | — | — |
 | POST /documents/:id/ingest-text | Y | Y | — | — | — | — |
+| GET /documents/:id/versions | Y | Y | Y | — | — | — |
+| POST /documents/:id/replace-text | Y | Y | — | — | — | — |
+| POST /documents/:id/replace-file | Y | Y | — | — | — | — |
+| POST /documents/:id/versions/:versionId/retry | Y | Y | — | — | — | — |
+| DELETE /documents/:id | Y | Y | — | — | — | — |
 | GET /api-keys | Y | Y | — | — | — | — |
 | POST /api-keys | Y | Y | — | — | — | — |
 | DELETE /api-keys/:id | Y | Y | — | — | — | — |

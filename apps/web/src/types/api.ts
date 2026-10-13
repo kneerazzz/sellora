@@ -55,6 +55,7 @@ export type DocumentStatus =
   | 'PROCESSING'
   | 'COMPLETED'
   | 'FAILED'
+  | 'DELETED'
 
 export type DocumentType = 'PDF' | 'DOCX' | 'TXT' | 'MARKDOWN'
 
@@ -75,6 +76,8 @@ export interface Document {
   totalChunks: number | null
   embeddingModel: string | null
   ingestedAt: string | null
+  activeVersionId: string | null
+  deletedAt: string | null
   tags: string[]
   organizationId: string
   uploadedById: string

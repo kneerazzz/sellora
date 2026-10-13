@@ -20,6 +20,7 @@ type StoredUpload = {
 export type ExtractedDocumentText = {
   text: string
   pageCount?: number
+  pages?: Array<{ pageNumber: number; text: string }>
 }
 
 export function chunkText(text: string, maxChars = 1800): string[] {
@@ -136,6 +137,7 @@ async function extractPdfText(buffer: Buffer): Promise<ExtractedDocumentText> {
     return {
       text: result.text,
       pageCount: result.total,
+      pages: result.pages.map(page => ({ pageNumber: page.num, text: page.text })),
     }
   } finally {
     await parser.destroy()

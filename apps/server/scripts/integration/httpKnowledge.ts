@@ -65,8 +65,8 @@ try {
   const tokens = users.map(user => jwt.sign({ sub: user.id, organizationId: user.organizationId, email: user.email, role: user.role }, process.env.JWT_ACCESS_SECRET!, { expiresIn: '5m' }))
   api = createServer(createApp())
   const base = await listen(api)
-  const request = (route: string, body: unknown, token = tokens[0]!) => fetch(`${base}/api/v1/documents${route}`, {
-    method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+  const request = (route: string, body: unknown, token = tokens[0]!, method = 'POST') => fetch(`${base}/api/v1/documents${route}`, {
+    method, headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
     body: JSON.stringify(body), signal: AbortSignal.timeout(30_000),
   })
   const upload = async (name: string, text: string | Buffer, type = 'text/plain') => {
@@ -110,17 +110,36 @@ try {
     assert.deepEqual(await readFile(persisted.storagePath), typeof bytes === 'string' ? Buffer.from(bytes) : bytes)
     const chunks = await prisma.documentChunk.findMany({ where: { documentId: uploaded.id } })
     assert.ok(chunks.some(chunk => chunk.text.includes('refunds are available within thirty days')))
+    assert.ok(chunks.every(chunk => chunk.pageNumber === (name.endsWith('.pdf') ? 1 : null)))
     assert.ok((await searchSimilarChunks({ organizationId: org.id, queryVector: vector, queryText: 'refund policy', documentIds: [uploaded.id] })).length > 0)
   }
   console.log('PASS real multipart TXT/Markdown/PDF/DOCX parse, originals, model metadata and scoped search')
+
+  const fileSeed = await upload('replace-file-seed.txt', original)
+  assert.equal(fileSeed.status, 201)
+  const fileSeedId = (await fileSeed.json() as { data: { id: string; activeVersionId: string } }).data
+  const fileReplacement = new FormData()
+  fileReplacement.set('file', new Blob([new Uint8Array(pdfFixture(original))], { type: 'application/pdf' }), 'replacement.pdf')
+  fileReplacement.set('expectedActiveVersionId', fileSeedId.activeVersionId)
+  const fileResult = await fetch(`${base}/api/v1/documents/${fileSeedId.id}/replace-file`, {
+    method: 'POST', headers: { authorization: `Bearer ${tokens[0]}` }, body: fileReplacement,
+    signal: AbortSignal.timeout(30_000),
+  })
+  assert.equal(fileResult.status, 200)
+  const replacedFile = await prisma.document.findUniqueOrThrow({ where: { id: fileSeedId.id } })
+  assert.notEqual(replacedFile.activeVersionId, fileSeedId.activeVersionId)
+  assert.equal(replacedFile.fileType, 'PDF')
+  assert.equal((await prisma.documentChunk.findFirstOrThrow({ where: { versionId: replacedFile.activeVersionId! } })).pageNumber, 1)
 
   const duplicate = await upload('policy.txt', original)
   assert.equal(duplicate.status, 201)
   assert.notEqual((await duplicate.json() as { data: { id: string } }).data.id, id)
   for (let attempt = 0; attempt < 2; attempt++) {
     assert.equal((await request(`/${id}/ingest-text`, { text: original })).status, 200)
-    assert.equal(await prisma.documentChunk.count({ where: { documentId: id } }), 1)
+    const active = (await prisma.document.findUniqueOrThrow({ where: { id } })).activeVersionId
+    assert.equal(await prisma.documentChunk.count({ where: { documentId: id, versionId: active! } }), 1)
   }
+  assert.equal(await prisma.documentVersion.count({ where: { documentId: id } }), 3)
   assert.equal((await request(`/${id}/ingest-text`, { text: original, embeddingModel: 'all-minilm' })).status, 422)
 
   const filesBefore = await readdir(storage, { recursive: true })
@@ -143,19 +162,29 @@ try {
 
   embeddingEntered = false
   embeddingGate = new Promise(resolve => { releaseEmbedding = resolve })
-  const replacement = request(`/${id}/ingest-text`, { text: original })
+  const originalActive = (await prisma.document.findUniqueOrThrow({ where: { id } })).activeVersionId
+  const replacement = request(`/${id}/replace-text`, { text: original, expectedActiveVersionId: originalActive })
   for (let i = 0; i < 200 && !embeddingEntered; i++) await delay(25)
   assert.equal(embeddingEntered, true)
-  assert.equal((await prisma.document.findUniqueOrThrow({ where: { id } })).status, 'PROCESSING')
+  assert.equal((await prisma.document.findUniqueOrThrow({ where: { id } })).activeVersionId, originalActive)
   const transactions = await prisma.$queryRaw<Array<{ count: bigint }>>`SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND state='idle in transaction'`
   assert.equal(Number(transactions[0]!.count), 0, 'No persistence transaction is held while embedding waits')
-  assert.deepEqual(await searchSimilarChunks({ organizationId: org.id, queryVector: vector, queryText: 'refund policy', documentIds: [id] }), [])
-  assert.equal((await request(`/${id}/ingest-text`, { text: 'Competing content' })).status, 409)
+  assert.ok((await searchSimilarChunks({ organizationId: org.id, queryVector: vector, queryText: 'refund policy', documentIds: [id] })).length > 0)
+  const contender = request(`/${id}/replace-text`, { text: original, expectedActiveVersionId: originalActive })
   releaseEmbedding!()
   embeddingGate = undefined
-  assert.equal((await replacement).status, 200)
+  const race = await Promise.all([replacement, contender])
+  assert.deepEqual(race.map(result => result.status).sort(), [200, 409])
   assert.equal((await prisma.document.findUniqueOrThrow({ where: { id } })).status, 'COMPLETED')
-  assert.equal(await prisma.documentChunk.count({ where: { documentId: id } }), 1)
+  const activeAfterRace = (await prisma.document.findUniqueOrThrow({ where: { id } })).activeVersionId
+  assert.equal(await prisma.documentChunk.count({ where: { documentId: id, versionId: activeAfterRace! } }), 1)
+  const historyResponse = await request(`/${id}/versions`, undefined, tokens[0]!, 'GET')
+  assert.equal(historyResponse.status, 200)
+  const history = (await historyResponse.json() as { data: Array<{ id: string; status: string; contentHash: string }> }).data
+  assert.equal(history.filter(version => version.status === 'ACTIVE').length, 1)
+  assert.ok(history.every(version => /^[0-9a-f]{64}$/.test(version.contentHash)))
+  assert.ok((await searchSimilarChunks({ organizationId: org.id, queryVector: vector, queryText: 'refund policy', documentIds: [id] }))
+    .every(match => match.versionId === activeAfterRace))
   assert.ok((await prisma.documentChunk.findMany({ where: { documentId: id } })).every(chunk => !chunk.text.includes('Competing content')))
 
   for (const malformed of [undefined, [], [1, 2], vector.map(() => 0), vector.map(() => null), vector.map(() => '1'), vector.map((v, i) => i === 0 ? 1e309 : v)]) {
@@ -164,11 +193,14 @@ try {
     assert.ok((await request(`/${id}/ingest-text`, { text: original })).status >= 400)
     responseVector = vector
     assert.deepEqual(await prisma.documentChunk.findMany({ where: { documentId: id } }), before)
-    assert.equal((await prisma.document.findUniqueOrThrow({ where: { id } })).status, 'FAILED')
+    assert.equal((await prisma.document.findUniqueOrThrow({ where: { id } })).activeVersionId, activeAfterRace)
     const failed = await prisma.document.findUniqueOrThrow({ where: { id } })
     assert.equal(await readFile(failed.storagePath, 'utf8'), original)
-    assert.equal((await request(`/${id}/ingest-text`, { text: original })).status, 200)
   }
+  const failedCandidate = await prisma.documentVersion.findFirstOrThrow({ where: { documentId: id, status: 'FAILED',
+    basedOnVersionId: activeAfterRace }, orderBy: { versionNumber: 'desc' } })
+  assert.equal((await request(`/${id}/versions/${failedCandidate.id}/retry`, {})).status, 200)
+  assert.notEqual((await prisma.document.findUniqueOrThrow({ where: { id } })).activeVersionId, activeAfterRace)
   responseVector = [1, 2]
   assert.ok((await upload('failed-vector.txt', original)).status >= 400)
   responseVector = vector
@@ -189,9 +221,35 @@ try {
   assert.deepEqual(await prisma.$queryRaw`SELECT id, embedding::text FROM document_chunks WHERE "documentId"=${id} ORDER BY id`, vectorBefore)
   await prisma.$executeRawUnsafe('DROP TRIGGER fixture_vector_failure ON document_chunks')
   await prisma.$executeRawUnsafe('DROP FUNCTION fail_fixture_vector()')
-  assert.equal((await request(`/${id}/ingest-text`, { text: original })).status, 200)
+  const sqlCandidate = await prisma.documentVersion.findFirstOrThrow({ where: { documentId: id, status: 'FAILED' },
+    orderBy: { versionNumber: 'desc' } })
+  assert.equal((await request(`/${id}/versions/${sqlCandidate.id}/retry`, {})).status, 200)
+  const latest = await prisma.document.findUniqueOrThrow({ where: { id } })
+  assert.equal((await request(`/${id}/versions`, undefined, tokens[1]!, 'GET')).status, 404)
+  assert.equal((await request(`/${id}/replace-text`, { text: original, expectedActiveVersionId: latest.activeVersionId }, tokens[1]!)).status, 404)
+  assert.equal((await request(`/${id}/versions/${sqlCandidate.id}/retry`, {}, tokens[1]!)).status, 404)
+  assert.equal((await request(`/${id}`, { expectedActiveVersionId: latest.activeVersionId }, tokens[1]!, 'DELETE')).status, 404)
+  assert.equal((await request(`/${id}`, { expectedActiveVersionId: latest.activeVersionId }, tokens[0]!, 'DELETE')).status, 200)
+  assert.deepEqual(await searchSimilarChunks({ organizationId: org.id, queryVector: vector, queryText: 'refund policy', documentIds: [id] }), [])
+  assert.equal((await request(`/${id}/replace-text`, { text: original, expectedActiveVersionId: latest.activeVersionId })).status, 409)
+  const deletionRaceUpload = await upload('deletion-race.txt', original)
+  assert.equal(deletionRaceUpload.status, 201)
+  const deletionRaceId = (await deletionRaceUpload.json() as { data: { id: string } }).data.id
+  const deletionRaceActive = (await prisma.document.findUniqueOrThrow({ where: { id: deletionRaceId } })).activeVersionId
+  embeddingEntered = false
+  embeddingGate = new Promise(resolve => { releaseEmbedding = resolve })
+  const lateReplacement = request(`/${deletionRaceId}/replace-text`, { text: original, expectedActiveVersionId: deletionRaceActive })
+  for (let i = 0; i < 200 && !embeddingEntered; i++) await delay(25)
+  assert.equal(embeddingEntered, true)
+  assert.equal((await request(`/${deletionRaceId}`, { expectedActiveVersionId: deletionRaceActive }, tokens[0]!, 'DELETE')).status, 200)
+  assert.deepEqual(await searchSimilarChunks({ organizationId: org.id, queryVector: vector, queryText: 'refund policy', documentIds: [deletionRaceId] }), [])
+  releaseEmbedding!()
+  embeddingGate = undefined
+  assert.equal((await lateReplacement).status, 409)
+  assert.equal((await prisma.document.findUniqueOrThrow({ where: { id: deletionRaceId } })).activeVersionId, null)
+  assert.equal(await prisma.documentVersion.count({ where: { documentId: deletionRaceId, status: 'ACTIVE' } }), 0)
   assert.equal(wrongModel, false)
-  console.log('PASS real HTTP upload/parser/storage/search, tenant scope, duplicate/retry, concurrent claim, no premature readiness and failed-vector rollback')
+  console.log('PASS real HTTP versioned upload, page provenance, active-pointer race, failed candidate retry, deletion and SQL rollback')
 } finally {
   releaseEmbedding?.()
   for (const server of [api, stub]) {

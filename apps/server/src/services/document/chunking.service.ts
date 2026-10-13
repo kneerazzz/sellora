@@ -7,6 +7,7 @@ export type ChunkedBlock = {
   overlapTokens: number
   headingPath: string[]
   sectionTitle: string | null
+  pageNumber?: number | null
 }
 
 export function estimateTokenCount(text: string): number {

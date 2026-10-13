@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict'
 import { createServer, type Server } from 'node:http'
 import { once } from 'node:events'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import jwt from 'jsonwebtoken'
@@ -85,9 +85,19 @@ try {
     leadId: otherLead.id, ownerId: foreignUser.id, aiRiskFlags: [] } })
   const documentData = { filename: 'fixture.txt', displayName: 'Fixture', mimeType: 'text/plain',
     sizeBytes: 30, fileType: 'TXT' as const, storagePath: 'synthetic-not-read', tags: [] }
-  const seedDoc = (organizationId: string, uploadedById: string, text: string) => prisma.document.create({ data: {
-    ...documentData, organizationId, uploadedById, status: 'COMPLETED', chunks: { create: { text, chunkIndex: 0, tokenCount: 10, headingPath: [] } },
-  } })
+  const seedDoc = async (organizationId: string, uploadedById: string, text: string) => {
+    const doc = await prisma.document.create({ data: {
+      ...documentData, organizationId, uploadedById, status: 'COMPLETED', nextVersionNumber: 2,
+    } })
+    const version = await prisma.documentVersion.create({ data: {
+      documentId: doc.id, organizationId, versionNumber: 1, filename: doc.filename,
+      mimeType: doc.mimeType, sizeBytes: doc.sizeBytes, fileType: doc.fileType,
+      storagePath: doc.storagePath, contentHash: sha256Hex(text), status: 'ACTIVE',
+    } })
+    await prisma.documentChunk.create({ data: { documentId: doc.id, versionId: version.id,
+      text, chunkIndex: 0, tokenCount: 10, headingPath: [] } })
+    return prisma.document.update({ where: { id: doc.id }, data: { activeVersionId: version.id } })
+  }
   const ownDoc = await seedDoc(org.id, admin.user.id, 'Refund policy permits refunds within thirty days.')
   const otherDoc = await seedDoc(foreign.id, foreignUser.id, 'Refund policy FOREIGN_SOURCE_MARKER.')
   const seedRun = (organizationId = org.id, completed = false) => prisma.workflowRun.create({ data: {
@@ -154,6 +164,31 @@ try {
       const form = new FormData(); form.set('file', new Blob(['Refund policy permits refunds.'], { type: 'text/plain' }), 'upload.txt'); return { body: form }
     } },
     { method: 'POST', route: `/documents/${ownDoc.id}/ingest-text`, allow: managers, body: { text: 'Refund policy permits refunds within thirty days.' } },
+    { method: 'GET', route: `/documents/${ownDoc.id}/versions`, allow: staff },
+    { method: 'POST', route: `/documents/${ownDoc.id}/replace-text`, allow: managers,
+      setup: async () => ({ body: { text: 'Refund policy permits refunds within thirty days.',
+        expectedActiveVersionId: (await prisma.document.findUniqueOrThrow({ where: { id: ownDoc.id } })).activeVersionId } }) },
+    { method: 'POST', route: `/documents/${ownDoc.id}/replace-file`, allow: managers,
+      setup: async () => { const form = new FormData(); form.set('file', new Blob(['Refund policy permits refunds.'],
+        { type: 'text/plain' }), 'replacement.txt'); form.set('expectedActiveVersionId',
+        (await prisma.document.findUniqueOrThrow({ where: { id: ownDoc.id } })).activeVersionId!); return { body: form } } },
+    { method: 'POST', route: '/documents/:id/versions/:versionId/retry', allow: managers,
+      setup: async () => {
+        const doc = await seedDoc(org.id, admin.user.id, 'Refund policy permits refunds.')
+        const stored = path.join(storage, `retry-${++serial}.txt`)
+        const content = 'Refund policy permits refunds.'
+        await writeFile(stored, content)
+        const version = await prisma.documentVersion.create({ data: {
+          documentId: doc.id, organizationId: org.id, versionNumber: 2,
+          basedOnVersionId: doc.activeVersionId, contentHash: sha256Hex(content),
+          filename: 'retry.txt', mimeType: 'text/plain', sizeBytes: content.length,
+          fileType: 'TXT', storagePath: stored, status: 'FAILED', errorMessage: 'Fixture failure',
+        } })
+        return { route: `/documents/${doc.id}/versions/${version.id}/retry`, body: {} }
+      } },
+    { method: 'DELETE', route: '/documents/:id', allow: managers,
+      setup: async () => { const doc = await seedDoc(org.id, admin.user.id, 'Refund policy permits refunds.')
+        return { route: `/documents/${doc.id}`, body: { expectedActiveVersionId: doc.activeVersionId } } } },
     { method: 'GET', route: '/api-keys', allow: managers },
     { method: 'GET', route: '/usage/summary', allow: managers },
     { method: 'PUT', route: '/usage/pause', allow: ['ADMIN'], body: { paused: false } },

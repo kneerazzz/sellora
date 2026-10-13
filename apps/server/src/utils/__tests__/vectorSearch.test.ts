@@ -8,7 +8,7 @@ process.env.JWT_REFRESH_SECRET = 'offline-refresh-secret-32-characters'
 const { prisma } = await import('../../config/prisma')
 const { searchSimilarChunks } = await import('../vectorSearch')
 
-it('returns low fusion scores and scopes both candidate branches to completed organization documents', async () => {
+it('returns low fusion scores and scopes both branches to active, nondeleted versions', async () => {
   const original = prisma.$queryRaw
   const calls: any[] = []
   const row = { chunkId: 'expected', score: 2 / 61 }
@@ -19,7 +19,8 @@ it('returns low fusion scores and scopes both candidate branches to completed or
     assert.equal(calls.length, 1)
     assert.equal(calls[0].values.filter((value: unknown) => value === 'org-a').length, 2)
     assert.equal(calls[0].values.filter((value: unknown) => value === 'approved-doc').length, 2)
-    assert.equal((calls[0].sql.match(/d.status = 'COMPLETED'/g) ?? []).length, 2)
+    assert.equal((calls[0].sql.match(/d."activeVersionId" = v.id/g) ?? []).length, 2)
+    assert.equal((calls[0].sql.match(/d."deletedAt" IS NULL/g) ?? []).length, 2)
     assert.deepEqual(await searchSimilarChunks({ organizationId: 'org-a', queryVector: [1, 0], queryText: 'SAML SSO', documentIds: [] }), [])
     assert.equal(calls.length, 1)
   } finally {

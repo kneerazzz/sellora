@@ -10,8 +10,11 @@ export type VectorSearchResult = {
   headingPath: string[]
   sectionTitle: string | null
   documentId: string
+  versionId: string
   displayName: string
   filename: string
+  sourceHeadingPath: string[]
+  sourceSectionTitle: string | null
   score: number
 }
 
@@ -64,8 +67,9 @@ export async function searchSimilarChunks(params: {
         RANK() OVER (ORDER BY dc.embedding <=> ${vectorStr}::vector ASC) as vector_rank
       FROM document_chunks dc
       INNER JOIN documents d ON d.id = dc."documentId"
+      INNER JOIN document_versions v ON v.id = dc."versionId"
       WHERE d."organizationId" = ${organizationId}
-        AND d.status = 'COMPLETED'
+        AND d."deletedAt" IS NULL AND d."activeVersionId" = v.id AND v.status = 'ACTIVE'
         AND dc.embedding IS NOT NULL
         ${docFilter}
       ORDER BY dc.embedding <=> ${vectorStr}::vector ASC
@@ -77,8 +81,9 @@ export async function searchSimilarChunks(params: {
         RANK() OVER (ORDER BY ts_rank(to_tsvector('english', dc.text), plainto_tsquery('english', ${queryText})) DESC) as keyword_rank
       FROM document_chunks dc
       INNER JOIN documents d ON d.id = dc."documentId"
+      INNER JOIN document_versions v ON v.id = dc."versionId"
       WHERE d."organizationId" = ${organizationId}
-        AND d.status = 'COMPLETED'
+        AND d."deletedAt" IS NULL AND d."activeVersionId" = v.id AND v.status = 'ACTIVE'
         AND to_tsvector('english', dc.text) @@ plainto_tsquery('english', ${queryText})
         ${docFilter}
       ORDER BY ts_rank(to_tsvector('english', dc.text), plainto_tsquery('english', ${queryText})) DESC
@@ -92,11 +97,15 @@ export async function searchSimilarChunks(params: {
       dc."headingPath",
       dc."sectionTitle",
       dc."documentId",
+      dc."versionId",
+      dc."headingPath" AS "sourceHeadingPath",
+      dc."sectionTitle" AS "sourceSectionTitle",
       d."displayName",
       d.filename,
       COALESCE(1.0 / (60 + s.vector_rank), 0.0) + COALESCE(1.0 / (60 + k.keyword_rank), 0.0) AS score
     FROM document_chunks dc
     INNER JOIN documents d ON d.id = dc."documentId"
+    INNER JOIN document_versions v ON v.id = dc."versionId"
     LEFT JOIN semantic_search s ON s.id = dc.id
     LEFT JOIN keyword_search k ON k.id = dc.id
     WHERE s.id IS NOT NULL OR k.id IS NOT NULL
@@ -113,8 +122,11 @@ export async function searchSimilarChunks(params: {
       headingPath: string[]
       sectionTitle: string | null
       documentId: string
+      versionId: string
       displayName: string
       filename: string
+      sourceHeadingPath: string[]
+      sourceSectionTitle: string | null
       score: number
     }>
   >(query)
