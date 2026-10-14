@@ -112,6 +112,20 @@ try {
     errorMessage: 'Fixture failure',
   } })
   const ownRun = await seedRun(org.id, true), otherRun = await seedRun(foreign.id, true)
+  const seedDraft = async (organizationId = org.id, authorId = admin.user.id) => {
+    const draft = await prisma.draft.create({ data: {
+      organizationId, authorId, idempotencyKey: `authz-draft-${++serial}`,
+      requestFingerprint: `authz-${serial}`, question: 'Fixture question', requestedDocumentIds: [],
+    } })
+    const revision = await prisma.draftRevision.create({ data: {
+      organizationId, authorId, draftId: draft.id, revisionNumber: 1,
+      content: 'Fixture draft.', origin: 'MANUAL',
+    } })
+    return prisma.draft.update({ where: { id: draft.id }, data: {
+      currentRevisionId: revision.id, concurrencyToken: 1, processingStatus: 'COMPLETED',
+    } })
+  }
+  const ownDraft = await seedDraft(), otherDraft = await seedDraft(foreign.id, foreignUser.id)
   const otherIntegration = await prisma.integration.create({ data: { organizationId: foreign.id, provider: 'HUBSPOT', label: 'Foreign' } })
   const seedKey = (organizationId = org.id) => prisma.apiKey.create({ data: { organizationId, label: 'Fixture', scope: 'FULL_ACCESS',
     keyHash: sha256Hex(`fixture-key-${++serial}`), keyPrefix: 'fixture' } })
@@ -200,6 +214,20 @@ try {
     { method: 'GET', route: '/api-keys', allow: managers },
     { method: 'GET', route: '/usage/summary', allow: managers },
     { method: 'PUT', route: '/usage/pause', allow: ['ADMIN'], body: { paused: false } },
+    { method: 'GET', route: '/drafts', allow: staff },
+    { method: 'POST', route: '/drafts', allow: staff, status: 201,
+      setup: async () => ({ body: { idempotencyKey: `authz-create-draft-${++serial}`,
+        question: 'Fixture question', draftText: 'Fixture draft.' } }) },
+    { method: 'GET', route: `/drafts/${ownDraft.id}`, allow: staff },
+    { method: 'POST', route: '/drafts/:id/revisions', allow: staff,
+      setup: async c => { const draft = await seedDraft(org.id, c.user.id); return {
+        route: `/drafts/${draft.id}/revisions`, body: { expectedRevisionId: draft.currentRevisionId,
+          content: 'Authorized correction.' },
+      } } },
+    { method: 'DELETE', route: '/drafts/:id', allow: staff,
+      setup: async c => { const draft = await seedDraft(org.id, c.user.id); return {
+        route: `/drafts/${draft.id}`, body: { expectedConcurrencyToken: draft.concurrencyToken },
+      } } },
     { method: 'POST', route: '/api-keys', allow: managers, status: 201, body: { label: 'Fixture', scope: 'READ_ONLY' } },
     { method: 'DELETE', route: '/api-keys/:id', allow: managers, setup: async () => ({ route: `/api-keys/${(await seedKey()).id}` }) },
     { method: 'GET', route: '/invites', allow: managers },
@@ -264,6 +292,11 @@ try {
   for (const caller of callers.filter(c => staff.includes(c.kind))) {
     await request('POST', `/workflow-runs/${otherRun.id}/retry`, caller.token, {}, 404)
     await request('POST', `/workflow-runs/${otherRun.id}/cancel`, caller.token, {}, 404)
+    await request('GET', `/drafts/${otherDraft.id}`, caller.token, undefined, 404)
+    await request('POST', `/drafts/${otherDraft.id}/revisions`, caller.token,
+      { expectedRevisionId: otherDraft.currentRevisionId, content: 'Forbidden edit' }, 404)
+    await request('DELETE', `/drafts/${otherDraft.id}`, caller.token,
+      { expectedConcurrencyToken: otherDraft.concurrencyToken }, 404)
   }
   for (const caller of [admin, full]) {
     const before = providerCalls
@@ -369,6 +402,7 @@ try {
     ['POST', '/documents', documentData, admin.token], ['POST', '/leads', { firstName: 'No', lastName: 'Override' }, rep.token],
     ['PATCH', '/leads/bulk/status', { leadIds: [ownLead.id], status: 'NEW' }, admin.token],
     ['POST', '/ai/grounded-answers', { question: 'refund policy' }, full.token],
+    ['POST', '/drafts', { idempotencyKey: 'authz-override-draft', question: 'No override', draftText: 'No.' }, rep.token],
     ['POST', '/webhooks/manual-question', { payload: {} }, hook.token], ['PATCH', '/users/profile', { firstName: 'No' }, admin.token],
   ] as const) await request(method, route, token, { ...body, organizationId: foreign.id }, 403)
   const form = new FormData(); form.set('organizationId', foreign.id); form.set('file', new Blob(['Forbidden override'], { type: 'text/plain' }), 'override.txt')
@@ -382,7 +416,9 @@ try {
     await request('POST', '/ai/grounded-answers', raw, { question: 'refund policy' }, 401)
     await request('POST', '/webhooks/manual-question', raw, { payload: {} }, 401)
   }
-  for (const caller of callers) for (const route of ['/drafts', '/approved-answers', `/drafts/${ownDoc.id}/export`]) await request('GET', route, caller.token, undefined, 404)
+  for (const caller of callers) await request('GET', '/approved-answers', caller.token, undefined, 404)
+  for (const caller of callers) await request('GET', `/drafts/${ownDraft.id}/export`, caller.token, undefined,
+    staff.includes(caller.kind) ? 404 : 401)
   // Document router authenticates before its unmatched-path 404.
   for (const caller of callers) await request('GET', `/documents/${ownDoc.id}/source`, caller.token, undefined, staff.includes(caller.kind) ? 404 : 401)
   const publicInvite = await seedInvite()
@@ -412,7 +448,7 @@ try {
   assert.ok(await prisma.usageTrace.count({ where: { organizationId: org.id, requestId: { not: null } } }) > 0)
   assert.ok(await prisma.usageTrace.count({ where: { organizationId: org.id, workflowRunId: { not: null } } }) > 0)
   assert.ok(await prisma.usageAttempt.count({ where: { trace: { organizationId: org.id }, category: 'PROVIDER' } }) > 0)
-  console.log(`PASS overrides, key expiry/revocation, public capabilities and absent future routes; ${requests} HTTP assertions total`)
+  console.log(`PASS overrides, key expiry/revocation, public capabilities and remaining absent future routes; ${requests} HTTP assertions total`)
 } finally {
   if (api) { api.closeAllConnections(); await new Promise<void>(resolve => api!.close(() => resolve())) }
   globalThis.fetch = originalFetch

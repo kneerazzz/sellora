@@ -61,6 +61,11 @@ route; do not infer new read permissions from its name.
 | DELETE /api-keys/:id | Y | Y | — | — | — | — |
 | GET /usage/summary | Y | Y | — | — | — | — |
 | PUT /usage/pause | Y | — | — | — | — | — |
+| GET /drafts | Y | Y | Y | — | — | — |
+| POST /drafts | Y | Y | Y | — | — | — |
+| GET /drafts/:id | Y | Y | Y | — | — | — |
+| POST /drafts/:id/revisions | Y | Y | Y | — | — | — |
+| DELETE /drafts/:id | Y | Y | Y | — | — | — |
 | GET /invites | Y | Y | — | — | — | — |
 | POST /invites | Y | Y | — | — | — | — |
 | DELETE /invites/:id | Y | Y | — | — | — | — |
@@ -113,10 +118,12 @@ empty citations; mixed lists never expand access. Empty lists refuse. This is a
 200 refusal result, not a resource-detail lookup. Document detail exposes scoped
 metadata; there is no original-file download/source endpoint yet.
 
-Drafts, approved answers, revision exports and source-file fetches remain
-unimplemented. `/drafts`, `/approved-answers`, `/drafts/:id/export` return 404;
+Draft CRUD is implemented for JWT staff under the organization boundary described
+in [DRAFT_CONTRACT.md](DRAFT_CONTRACT.md). Approved answers, revision exports and
+source-file fetches remain unimplemented. `/approved-answers` and
+`/drafts/:id/export` return 404 after any applicable draft-router authentication;
 `/documents/:id/source` passes the document router's JWT guard before 404. Parts
-07–09 must add explicit permissions and extend these tests before shipping.
+08–09 must add explicit approval/export/library permissions and extend these tests before shipping.
 Browser copy in the current draft page is not a durable export API.
 
 ## Compatibility and acceptance
@@ -146,3 +153,10 @@ full disposable suite PASS including 404 authorization HTTP assertions and clean
 Public registration/login/invite capabilities were also exercised. Part 04 later
 completed its local 04C acceptance; Astra review of the completed Part 04 repair
 remains pending.
+
+Packet 08B extended the matrix on October 14, 2026 to 57 protected routes and
+543 HTTP assertions. The five draft routes allow ADMIN/MANAGER/REP JWT staff,
+deny all API-key scopes, return 404 for foreign draft IDs and reject body
+organization overrides before work. The final server typecheck, 22/22 test files
+and full disposable suite/cleanup passed with deterministic providers. Approval,
+export and approved-answer permissions remain future rows.

@@ -109,7 +109,10 @@ try {
   assert.equal(legacyUsage.measurementStatus, 'UNKNOWN')
   assert.equal(legacyUsage.totalQuantity, null)
   assert.equal(legacyUsage.rateVersion, 'legacy-unavailable-v1')
+  assert.ok(await prisma.aiInteraction.findUnique({ where: { id: 'legacy-ai' } }))
+  assert.equal(await prisma.draft.count(), 0)
   console.log('PASS legacy AI usage backfilled as unknown rather than zero')
+  console.log('PASS draft migration preserves prior interactions and adds an empty draft domain')
 
   const { persistIngestedChunks } = await import('../../src/modules/documents/ingestionPersistence')
   const { structureAwareChunk } = await import('../../src/services/document/chunking.service')

@@ -1,6 +1,6 @@
 # Sellora — start here
 
-**Current state:** Parts 00/02/03/04/05/07 and packets 06A–06C complete locally as of **2026-10-13**; 06D queued ingestion deferred after local measurement. 01A scope written, buyer discovery pending. See [baseline evidence](docs/BASELINE.md), [evidence policy](docs/EVIDENCE_POLICY.md) and [development contract](docs/DEVELOPMENT.md).
+**Current state:** Parts 00/02/03/04/05/07, packets 06A–06C and 08A–08B complete locally as of **2026-10-14**; 06D queued ingestion deferred after local measurement. 01A scope written, buyer discovery pending. See [baseline evidence](docs/BASELINE.md), [evidence policy](docs/EVIDENCE_POLICY.md) and [development contract](docs/DEVELOPMENT.md).
 The detailed `PROJECT_REPORT.md` and `SELLORA_BUILD_PLAN.md` are local operator records excluded from Git. This README is the repository restart guide.
 
 ## What we are building
@@ -17,7 +17,7 @@ The goal is to try for one paid engagement in roughly two months; the original p
 
 - Committed repairs cover retrieval/refusal, embedding contracts, transactional ingestion, sessions and the staff draft UI. Baseline server checks and frontend production builds passed; see dated evidence below.
 - A forward migration preserves previous vectors and requires explicit re-ingestion; it has not been applied to a client database in this work.
-- The dashboard now has a sourced, editable draft/copy screen. Its edits and review checkbox are session-only; durable approval and approved answers remain missing.
+- The server now persists organization-scoped drafts, immutable revisions and exact source links with idempotent creation and optimistic edit/archive conflicts. The dashboard still uses session-only edits/checks; durable approval, export and approved answers remain missing.
 - Versioned replacement/deletion and the Knowledge UI now pass local checks; client retention decisions and physical erasure remain open. Integrations, invoice reconciliation and client operations remain incomplete. The public widget remains outside the first offer because its credential/rendering issues are open.
 - CRM remains a payload preview; saved n8n workflows are not verified production integrations.
 
@@ -57,9 +57,11 @@ Part 03 added real authenticated HTTP TXT/Markdown/PDF/DOCX upload/search, dupli
 
 07D adds a Knowledge screen for version/error inspection, actual page/section location, upload, replace, failed-version retry and confirmed deletion. A headless Firefox journey against a synthetic local API passed duplicate-name display, successful upload, replacement, parser failure, retry, deletion and cancellation state; web build and the server's real disposable HTTP/SQL suite passed separately. This is not a client or live-provider session.
 
+08A/08B add the [durable draft contract](docs/DRAFT_CONTRACT.md), a forward schema for drafts/revisions/source links/approval decisions, and JWT staff create/list/detail/edit/archive APIs. The final server typecheck and 22/22 test files passed. The 16-migration disposable suite passed fresh/repeat and populated replay, 57 protected routes across seven caller kinds with 543 HTTP assertions, idempotent/concurrent creation, one-winner edits, durable refusal/failure, current/stale/unavailable sources, archive conflicts, tenant constraints and cleanup. Providers were deterministic; no browser client, live model, approval/export or delivery was exercised.
+
 ## Next work
 
-Next action: **pending Part 05/06 and Part 07 Astra review, then 08A — draft/approval domain**, with pilot reviewer permissions still needing a decision. The user explicitly requested local 07C/07D work; both passed local acceptance on **2026-10-13**. A `gpt-6-astra` read-only review accepted the 04C.2 repair on **2026-10-10** with one low-priority break-glass exclusivity regression left as a follow-up. The local operator plan contains bounded task cards and checks.
+Next action: **pending Part 05/06/07 and 08A/08B Astra review, then 08C — exact-revision approval**. The local safety default reserves approval for ADMIN/MANAGER and denies self-review, while the production reviewer/self-review policy remains a buyer decision. The user explicitly requested local 08A/08B work; both passed local acceptance on **2026-10-14**. A `gpt-6-astra` read-only review accepted the 04C.2 repair on **2026-10-10** with one low-priority break-glass exclusivity regression left as a follow-up. The local operator plan contains bounded task cards and checks.
 
 [01A's working offer sheet](docs/FIRST_OFFER.md) is complete; 01B discovery and 01C pilot boundaries await user/buyer evidence. Preserve `apps/server/scripts/bulkIngest.ts`. Update status after each packet; commit only owned work locally after complete parts, without pushing. The October 3 planning expansion changes documentation only; no new application checks or acceptance are claimed.
 

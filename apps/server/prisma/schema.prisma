@@ -27,6 +27,10 @@ model Organization {
   deals            Deal[]
   documents        Document[]
   documentVersions DocumentVersion[]
+  drafts           Draft[]
+  draftRevisions   DraftRevision[]
+  draftSources     DraftRevisionSource[]
+  draftApprovals   DraftApproval[]
   externalMappings ExternalObjectMapping[]
   integrations     Integration[]
   invites          Invite[]
@@ -67,6 +71,9 @@ model User {
   aiInteractions    AiInteraction[]
   assignedDeals     Deal[]          @relation("DealOwner")
   uploadedDocuments Document[]
+  authoredDrafts     Draft[]         @relation("DraftAuthor")
+  authoredDraftRevisions DraftRevision[] @relation("DraftRevisionAuthor")
+  reviewedDraftApprovals DraftApproval[] @relation("DraftApprovalReviewer")
   assignedLeads     Lead[]          @relation("AssignedRep")
   createdLeads      Lead[]          @relation("LeadCreator")
   passwordRecoveries PasswordRecovery[]
@@ -76,6 +83,7 @@ model User {
   organization      Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([organizationId])
+  @@unique([id, organizationId])
   @@index([email])
   @@map("users")
 }
@@ -139,6 +147,7 @@ model Document {
   aiInteractions AiInteraction[]
   chunks         DocumentChunk[]
   versions       DocumentVersion[]
+  draftSources   DraftRevisionSource[]
   organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   uploadedBy     User            @relation(fields: [uploadedById], references: [id])
 
@@ -170,6 +179,7 @@ model DocumentVersion {
   embeddingModel String?
   publishedAt    DateTime?
   chunks         DocumentChunk[]
+  draftSources   DraftRevisionSource[]
   document       Document @relation(fields: [documentId, organizationId], references: [id, organizationId], onDelete: Cascade)
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
@@ -196,10 +206,109 @@ model DocumentChunk {
   legacyEmbedding Unsupported("vector(384)")?
   document      Document               @relation(fields: [documentId], references: [id], onDelete: Cascade)
   version       DocumentVersion        @relation(fields: [versionId, documentId], references: [id, documentId], onDelete: Cascade)
+  draftSources  DraftRevisionSource[]
 
   @@unique([versionId, chunkIndex])
+  @@unique([id, versionId, documentId])
   @@index([documentId])
   @@map("document_chunks")
+}
+
+model Draft {
+  id                   String                @id @default(cuid())
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  title                String?
+  question             String
+  requestedDocumentIds String[]
+  idempotencyKey       String
+  requestFingerprint   String
+  processingStatus     DraftProcessingStatus @default(PROCESSING)
+  reviewStatus         DraftReviewStatus     @default(REQUIRED)
+  deliveryStatus       DraftDeliveryStatus   @default(NOT_REQUESTED)
+  generationErrorCode  String?
+  currentRevisionId    String?
+  concurrencyToken     Int                   @default(0)
+  archivedAt           DateTime?
+  organizationId       String
+  authorId             String
+  organization         Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  author               User                  @relation("DraftAuthor", fields: [authorId, organizationId], references: [id, organizationId])
+  revisions            DraftRevision[]       @relation("DraftRevisions")
+  currentRevision      DraftRevision?        @relation("CurrentDraftRevision", fields: [currentRevisionId, id, organizationId], references: [id, draftId, organizationId], onDelete: NoAction, onUpdate: NoAction)
+  approvals            DraftApproval[]
+
+  @@unique([organizationId, idempotencyKey])
+  @@unique([id, organizationId])
+  @@unique([currentRevisionId, id, organizationId])
+  @@index([organizationId, archivedAt, updatedAt])
+  @@index([organizationId, processingStatus, updatedAt])
+  @@map("drafts")
+}
+
+model DraftRevision {
+  id              String                @id @default(cuid())
+  createdAt       DateTime              @default(now())
+  revisionNumber  Int
+  content         String
+  origin          DraftRevisionOrigin
+  isRefusal       Boolean               @default(false)
+  aiInteractionId String?
+  organizationId  String
+  draftId         String
+  authorId        String
+  organization    Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  draft           Draft                 @relation("DraftRevisions", fields: [draftId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  currentForDraft Draft?                @relation("CurrentDraftRevision")
+  author          User                  @relation("DraftRevisionAuthor", fields: [authorId, organizationId], references: [id, organizationId])
+  sources         DraftRevisionSource[]
+  approvals       DraftApproval[]
+
+  @@unique([draftId, revisionNumber])
+  @@unique([id, draftId, organizationId])
+  @@unique([id, organizationId])
+  @@index([organizationId, draftId, createdAt])
+  @@map("draft_revisions")
+}
+
+model DraftRevisionSource {
+  id              String          @id @default(cuid())
+  createdAt       DateTime        @default(now())
+  ordinal         Int
+  organizationId  String
+  draftRevisionId String
+  documentId      String
+  versionId       String
+  chunkId         String
+  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  revision        DraftRevision   @relation(fields: [draftRevisionId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  document        Document        @relation(fields: [documentId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  version         DocumentVersion @relation(fields: [versionId, documentId, organizationId], references: [id, documentId, organizationId], onDelete: Restrict)
+  chunk           DocumentChunk   @relation(fields: [chunkId, versionId, documentId], references: [id, versionId, documentId], onDelete: Restrict)
+
+  @@unique([draftRevisionId, ordinal])
+  @@unique([draftRevisionId, chunkId])
+  @@index([organizationId, documentId, versionId])
+  @@map("draft_revision_sources")
+}
+
+model DraftApproval {
+  id             String                @id @default(cuid())
+  createdAt      DateTime              @default(now())
+  decision       DraftApprovalDecision
+  note           String?
+  organizationId String
+  draftId        String
+  revisionId     String
+  reviewerId     String
+  organization   Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  draft          Draft                 @relation(fields: [draftId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  revision       DraftRevision         @relation(fields: [revisionId, draftId, organizationId], references: [id, draftId, organizationId], onDelete: Restrict)
+  reviewer       User                  @relation("DraftApprovalReviewer", fields: [reviewerId, organizationId], references: [id, organizationId])
+
+  @@index([organizationId, draftId, createdAt])
+  @@index([revisionId, createdAt])
+  @@map("draft_approvals")
 }
 
 model Lead {
@@ -849,6 +958,36 @@ enum ConfidenceLevel {
   HIGH
   MEDIUM
   LOW
+}
+
+enum DraftProcessingStatus {
+  PROCESSING
+  COMPLETED
+  REFUSED
+  FAILED
+}
+
+enum DraftReviewStatus {
+  REQUIRED
+  APPROVED
+  REJECTED
+}
+
+enum DraftDeliveryStatus {
+  NOT_REQUESTED
+  PENDING
+  SENT
+  FAILED
+}
+
+enum DraftRevisionOrigin {
+  GENERATED
+  MANUAL
+}
+
+enum DraftApprovalDecision {
+  APPROVED
+  REJECTED
 }
 
 enum SyncDirection {

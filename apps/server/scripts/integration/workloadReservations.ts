@@ -29,7 +29,9 @@ async function child(organizationId: string, limits: { concurrency: number; allo
     },
     timeout: 30_000,
   })
-  return JSON.parse(result.stdout.trim()) as { admitted: number; denied: Record<string, number> }
+  const jsonLine = result.stdout.trim().split('\n').reverse().find((line: string) => line.trim().startsWith('{'))
+  if (!jsonLine) throw new Error('Reservation child produced no JSON result')
+  return JSON.parse(jsonLine) as { admitted: number; denied: Record<string, number> }
 }
 
 try {
