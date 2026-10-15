@@ -16,6 +16,7 @@ Object.assign(process.env, { DATABASE_URL: target, NODE_ENV: 'test' })
 const { prisma } = await import('../../src/config/prisma')
 const { sha256Hex } = await import('../../src/utils/crypto')
 const { groundedAnswersService } = await import('../../src/modules/groundedAnswers/groundedAnswers.service')
+const { isEffectiveDraftApproval } = await import('../../src/modules/drafts/drafts.service')
 let api: Server | undefined
 
 try {
@@ -127,6 +128,31 @@ try {
   assert.equal(created.revisions[0].sources[0].documentId, source.document.id)
   assert.equal(created.revisions[0].sources[0].displayName, source.document.displayName)
 
+  const approvedRevisionId = created.currentRevisionId as string
+  await request('POST', `/drafts/${created.id}/approvals`, tokens.rep, { revisionId: approvedRevisionId }, 403)
+  const approved = (await request('POST', `/drafts/${created.id}/approvals`, tokens.manager,
+    { revisionId: approvedRevisionId, note: 'Reviewed against current source.' })).data
+  assert.equal(approved.reviewStatus, 'APPROVED')
+  assert.equal(approved.approvals[0].decision, 'APPROVED')
+  assert.equal(await isEffectiveDraftApproval(prisma, created.id, approvedRevisionId, organization.id), true)
+  await request('POST', `/drafts/${created.id}/approvals`, tokens.manager, { revisionId: approvedRevisionId }, 409)
+  await request('POST', `/drafts/${created.id}/approvals`, tokens.foreign, { revisionId: approvedRevisionId }, 404)
+  console.log('PASS exact-revision approval, self-review/foreign denial and effective approval predicate')
+
+  const requestedExport = (await request('POST', `/drafts/${created.id}/exports`, tokens.manager, {
+    revisionId: approvedRevisionId, includeSources: true, approvedOnly: true,
+  })).data
+  assert.equal(requestedExport.revisionId, approvedRevisionId)
+  assert.equal(requestedExport.content, created.revisions[0].content)
+  assert.equal(requestedExport.approvalStatus, 'APPROVED')
+  assert.equal(requestedExport.sourceStatus, 'CURRENT')
+  assert.match(requestedExport.text, /Sources:/)
+  await request('POST', `/drafts/${created.id}/exports/${requestedExport.exportId}/copied`, tokens.rep, {}, 404)
+  await request('POST', `/drafts/${created.id}/exports/${requestedExport.exportId}/copied`, tokens.manager, {}, 201)
+  await request('POST', `/drafts/${created.id}/exports/${requestedExport.exportId}/copied`, tokens.manager, {}, 409)
+  assert.equal((await prisma.draft.findUniqueOrThrow({ where: { id: created.id } })).deliveryStatus, 'NOT_REQUESTED')
+  console.log('PASS exact revision export and separate single-use browser copy confirmation without delivery state')
+
   const replay = (await request('POST', '/drafts', tokens.manager, {
     idempotencyKey: 'draft-success-0001', question: 'success question', documentIds: [source.document.id],
   }, 201)).data
@@ -161,6 +187,37 @@ try {
   assert.equal(afterEdit.revisions.length, 2)
   assert.equal(afterEdit.concurrencyToken, 2)
   assert.equal(afterEdit.reviewStatus, 'REQUIRED')
+  assert.equal(afterEdit.approvals.length, 1, 'historical approval remains attributed')
+  assert.equal(await isEffectiveDraftApproval(prisma, created.id, expectedRevisionId, organization.id), false)
+  const oldRevisionExport = (await request('POST', `/drafts/${created.id}/exports`, tokens.admin, {
+    revisionId: expectedRevisionId, includeSources: false, approvedOnly: false,
+  })).data
+  assert.equal(oldRevisionExport.revisionId, expectedRevisionId)
+  assert.equal(oldRevisionExport.content, beforeEdit.revisions[0].content)
+  assert.equal(oldRevisionExport.approvalStatus, 'UNAPPROVED')
+  await request('POST', `/drafts/${created.id}/exports`, tokens.admin, {
+    revisionId: expectedRevisionId, approvedOnly: true,
+  }, 409)
+
+  const raceDraft = (await request('POST', '/drafts', tokens.rep, {
+    idempotencyKey: 'draft-approval-edit-race', question: 'race question', draftText: 'Initial revision for race.',
+  }, 201)).data
+  const approvalEditRace = await Promise.all([
+    requestWithStatus('POST', `/drafts/${raceDraft.id}/approvals`, tokens.manager,
+      { revisionId: raceDraft.currentRevisionId }),
+    requestWithStatus('POST', `/drafts/${raceDraft.id}/revisions`, tokens.rep,
+      { expectedRevisionId: raceDraft.currentRevisionId, content: 'Concurrent edited revision.' }),
+  ])
+  assert.ok(approvalEditRace.every(result => [200, 409].includes(result.status)))
+  assert.ok(approvalEditRace.some(result => result.status === 200), 'one serialized action should win')
+  const raceFinal = (await request('GET', `/drafts/${raceDraft.id}`, tokens.admin)).data
+  if (raceFinal.reviewStatus === 'APPROVED') {
+    assert.equal(raceFinal.approvals[0].revisionId, raceFinal.currentRevisionId)
+    assert.equal(raceFinal.revisions[0].id, raceFinal.currentRevisionId)
+  } else {
+    assert.equal(raceFinal.reviewStatus, 'REQUIRED')
+  }
+  console.log('PASS concurrent edit/approve cannot make an unseen or superseded revision effective')
   assert.ok(['Manager correction.', 'Rep correction.'].includes(afterEdit.revisions[0].content))
   await assert.rejects(prisma.draftRevision.update({
     where: { id: afterEdit.currentRevisionId }, data: { content: 'Forbidden mutation' },
@@ -207,11 +264,33 @@ try {
   } }))
   console.log('PASS scoped list/detail/edit and database rejection of cross-organization associations')
 
-  await prisma.documentVersion.update({ where: { id: source.version.id }, data: { status: 'RETIRED' } })
-  await prisma.document.update({ where: { id: source.document.id }, data: { activeVersionId: null } })
+  const sourceRaceDraft = (await request('POST', '/drafts', tokens.rep, {
+    idempotencyKey: 'draft-source-invalidation-race', question: 'source race question',
+    documentIds: [source.document.id],
+  }, 201)).data
+  let sourceRaceApproval: Promise<{ status: number; envelope: { data?: any; message: string } }> | undefined
+  await prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT "id" FROM "documents" WHERE "id" = ${source.document.id} FOR UPDATE`
+    sourceRaceApproval = requestWithStatus('POST', `/drafts/${sourceRaceDraft.id}/approvals`, tokens.manager,
+      { revisionId: sourceRaceDraft.currentRevisionId })
+    await new Promise(resolve => setTimeout(resolve, 50))
+    await tx.documentVersion.update({ where: { id: source.version.id }, data: { status: 'RETIRED' } })
+    await tx.document.update({ where: { id: source.document.id }, data: { activeVersionId: null } })
+  })
+  assert.ok(sourceRaceApproval)
+  assert.equal((await sourceRaceApproval).status, 409)
+  console.log('PASS source invalidation serializes ahead of approval and stale references are denied')
   const stale = (await request('GET', `/drafts/${created.id}`, tokens.admin)).data
   assert.ok(stale.revisions.flatMap((revision: any) => revision.sources).every((item: any) => item.availability === 'STALE'))
   await prisma.document.update({ where: { id: source.document.id }, data: { status: 'DELETED', deletedAt: new Date() } })
+  const staleExport = (await request('POST', `/drafts/${created.id}/exports`, tokens.admin, {
+    revisionId: afterEdit.currentRevisionId, includeSources: true,
+  })).data
+  assert.equal(staleExport.sourceStatus, 'UNAVAILABLE')
+  assert.doesNotMatch(staleExport.text, /own policy/)
+  await request('POST', `/drafts/${created.id}/approvals`, tokens.admin, {
+    revisionId: afterEdit.currentRevisionId,
+  }, 409)
   const unavailable = (await request('GET', `/drafts/${created.id}`, tokens.admin)).data
   assert.ok(unavailable.revisions.flatMap((revision: any) => revision.sources).every((item: any) => item.availability === 'UNAVAILABLE'))
   assert.ok(unavailable.revisions.flatMap((revision: any) => revision.sources).every((item: any) => item.displayName === undefined))
@@ -221,6 +300,9 @@ try {
     expectedConcurrencyToken: unavailable.concurrencyToken,
   })).data
   assert.ok(archived.archivedAt)
+  await request('POST', `/drafts/${created.id}/exports`, tokens.manager, {
+    revisionId: archived.currentRevisionId,
+  }, 409)
   await request('DELETE', `/drafts/${created.id}`, tokens.manager, {
     expectedConcurrencyToken: unavailable.concurrencyToken,
   }, 409)

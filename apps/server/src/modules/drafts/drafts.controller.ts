@@ -5,10 +5,12 @@ import { asyncHandler } from '../../utils/asyncHandler'
 import { withClientDisconnectSignal } from '../../services/provider/httpCancellation'
 import { draftsService } from './drafts.service'
 import type {
+  ApproveDraftInput,
   AppendDraftRevisionInput,
   ArchiveDraftInput,
   CreateDraftInput,
   ListDraftsQuery,
+  RequestDraftExportInput,
 } from './drafts.schema'
 
 const createDraft = asyncHandler(async (req: Request, res: Response) => {
@@ -59,4 +61,25 @@ const archiveDraft = asyncHandler(async (req: Request, res: Response) => {
   res.status(200).json(ApiResponse.ok('Draft archived', draft))
 })
 
-export const draftsController = { createDraft, listDrafts, getDraft, appendRevision, archiveDraft }
+const approveDraft = asyncHandler(async (req: Request, res: Response) => {
+  const draft = await draftsService.approveDraft(req.params.id as string, req.body as ApproveDraftInput, {
+    organizationId: req.user.organizationId, userId: req.user.id,
+  })
+  res.status(200).json(ApiResponse.ok('Draft revision approved', draft))
+})
+
+const requestDraftExport = asyncHandler(async (req: Request, res: Response) => {
+  const result = await draftsService.requestDraftExport(req.params.id as string, req.body as RequestDraftExportInput, {
+    organizationId: req.user.organizationId, userId: req.user.id,
+  })
+  res.status(200).json(ApiResponse.ok('Revision export prepared', result))
+})
+
+const confirmDraftCopy = asyncHandler(async (req: Request, res: Response) => {
+  const result = await draftsService.confirmDraftCopy(req.params.id as string, req.params.exportId as string, {
+    organizationId: req.user.organizationId, userId: req.user.id,
+  })
+  res.status(201).json(ApiResponse.created('Copy success recorded', result))
+})
+
+export const draftsController = { createDraft, listDrafts, getDraft, appendRevision, archiveDraft, approveDraft, requestDraftExport, confirmDraftCopy }

@@ -31,6 +31,7 @@ model Organization {
   draftRevisions   DraftRevision[]
   draftSources     DraftRevisionSource[]
   draftApprovals   DraftApproval[]
+  draftExportRequests DraftExportRequest[]
   externalMappings ExternalObjectMapping[]
   integrations     Integration[]
   invites          Invite[]
@@ -74,6 +75,7 @@ model User {
   authoredDrafts     Draft[]         @relation("DraftAuthor")
   authoredDraftRevisions DraftRevision[] @relation("DraftRevisionAuthor")
   reviewedDraftApprovals DraftApproval[] @relation("DraftApprovalReviewer")
+  requestedDraftExports DraftExportRequest[] @relation("DraftExportRequester")
   assignedLeads     Lead[]          @relation("AssignedRep")
   createdLeads      Lead[]          @relation("LeadCreator")
   passwordRecoveries PasswordRecovery[]
@@ -237,6 +239,7 @@ model Draft {
   revisions            DraftRevision[]       @relation("DraftRevisions")
   currentRevision      DraftRevision?        @relation("CurrentDraftRevision", fields: [currentRevisionId, id, organizationId], references: [id, draftId, organizationId], onDelete: NoAction, onUpdate: NoAction)
   approvals            DraftApproval[]
+  exportRequests       DraftExportRequest[]
 
   @@unique([organizationId, idempotencyKey])
   @@unique([id, organizationId])
@@ -263,6 +266,7 @@ model DraftRevision {
   author          User                  @relation("DraftRevisionAuthor", fields: [authorId, organizationId], references: [id, organizationId])
   sources         DraftRevisionSource[]
   approvals       DraftApproval[]
+  exportRequests  DraftExportRequest[]
 
   @@unique([draftId, revisionNumber])
   @@unique([id, draftId, organizationId])
@@ -309,6 +313,34 @@ model DraftApproval {
   @@index([organizationId, draftId, createdAt])
   @@index([revisionId, createdAt])
   @@map("draft_approvals")
+}
+
+model DraftExportRequest {
+  id             String                   @id @default(cuid())
+  createdAt      DateTime                 @default(now())
+  includeSources Boolean                  @default(false)
+  organizationId String
+  draftId        String
+  revisionId     String
+  requesterId    String
+  organization   Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  draft          Draft                    @relation(fields: [draftId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  revision       DraftRevision            @relation(fields: [revisionId, draftId, organizationId], references: [id, draftId, organizationId], onDelete: Restrict)
+  requester      User                     @relation("DraftExportRequester", fields: [requesterId, organizationId], references: [id, organizationId])
+  confirmations  DraftCopyConfirmation[]
+
+  @@index([organizationId, draftId, createdAt])
+  @@map("draft_export_requests")
+}
+
+model DraftCopyConfirmation {
+  id        String            @id @default(cuid())
+  createdAt DateTime          @default(now())
+  exportId  String
+  export    DraftExportRequest @relation(fields: [exportId], references: [id], onDelete: Cascade)
+
+  @@index([exportId, createdAt])
+  @@map("draft_copy_confirmations")
 }
 
 model Lead {

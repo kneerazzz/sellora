@@ -228,6 +228,17 @@ try {
       setup: async c => { const draft = await seedDraft(org.id, c.user.id); return {
         route: `/drafts/${draft.id}`, body: { expectedConcurrencyToken: draft.concurrencyToken },
       } } },
+    { method: 'POST', route: '/drafts/:id/approvals', allow: ['ADMIN', 'MANAGER'],
+      setup: async c => { const author = users.find(user => user.id !== c.user.id)!; const draft = await seedDraft(org.id, author.id)
+        return { route: `/drafts/${draft.id}/approvals`, body: { revisionId: draft.currentRevisionId } } } },
+    { method: 'POST', route: '/drafts/:id/exports', allow: staff,
+      setup: async c => { const draft = await seedDraft(org.id, c.user.id)
+        return { route: `/drafts/${draft.id}/exports`, body: { revisionId: draft.currentRevisionId } } } },
+    { method: 'POST', route: '/drafts/:id/exports/:exportId/copied', allow: staff, status: 201,
+      setup: async c => { const draft = await seedDraft(org.id, c.user.id)
+        const request = await prisma.draftExportRequest.create({ data: { organizationId: org.id, draftId: draft.id,
+          revisionId: draft.currentRevisionId!, requesterId: c.user.id } })
+        return { route: `/drafts/${draft.id}/exports/${request.id}/copied`, body: {} } } },
     { method: 'POST', route: '/api-keys', allow: managers, status: 201, body: { label: 'Fixture', scope: 'READ_ONLY' } },
     { method: 'DELETE', route: '/api-keys/:id', allow: managers, setup: async () => ({ route: `/api-keys/${(await seedKey()).id}` }) },
     { method: 'GET', route: '/invites', allow: managers },
@@ -297,6 +308,10 @@ try {
       { expectedRevisionId: otherDraft.currentRevisionId, content: 'Forbidden edit' }, 404)
     await request('DELETE', `/drafts/${otherDraft.id}`, caller.token,
       { expectedConcurrencyToken: otherDraft.concurrencyToken }, 404)
+    await request('POST', `/drafts/${otherDraft.id}/approvals`, caller.token,
+      { revisionId: otherDraft.currentRevisionId }, caller.kind === 'ADMIN' || caller.kind === 'MANAGER' ? 404 : 403)
+    await request('POST', `/drafts/${otherDraft.id}/exports`, caller.token,
+      { revisionId: otherDraft.currentRevisionId }, 404)
   }
   for (const caller of [admin, full]) {
     const before = providerCalls

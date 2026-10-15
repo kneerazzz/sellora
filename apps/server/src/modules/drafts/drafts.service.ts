@@ -6,10 +6,12 @@ import { ProviderOperationError } from '../../services/provider/providerTranspor
 import { groundedAnswersService } from '../groundedAnswers/groundedAnswers.service'
 import { documentsService } from '../documents/documents.service'
 import type {
+  ApproveDraftInput,
   AppendDraftRevisionInput,
   ArchiveDraftInput,
   CreateDraftInput,
   ListDraftsQuery,
+  RequestDraftExportInput,
 } from './drafts.schema'
 
 type DraftContext = {
@@ -20,6 +22,86 @@ type DraftContext = {
 }
 
 type SourceReference = { documentId: string; versionId: string; chunkId: string }
+
+type LockedDraft = { id: string; currentRevisionId: string | null; concurrencyToken: number; archivedAt: Date | null; reviewStatus: string }
+
+async function lockDraft(tx: Prisma.TransactionClient, draftId: string, organizationId: string) {
+  const rows = await tx.$queryRaw<LockedDraft[]>(Prisma.sql`
+    SELECT "id", "currentRevisionId", "concurrencyToken", "archivedAt", "reviewStatus"
+    FROM "drafts" WHERE "id" = ${draftId} AND "organizationId" = ${organizationId} FOR UPDATE
+  `)
+  if (!rows[0]) throw ApiError.notFound('Draft not found')
+  return rows[0]
+}
+
+async function lockSourceDocuments(tx: Prisma.TransactionClient, organizationId: string, sources: SourceReference[]) {
+  const ids = [...new Set(sources.map(source => source.documentId))].sort()
+  if (!ids.length) return
+  const locked = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+    SELECT "id" FROM "documents"
+    WHERE "organizationId" = ${organizationId} AND "id" IN (${Prisma.join(ids)})
+    ORDER BY "id" FOR SHARE
+  `)
+  if (locked.length !== ids.length) throw ApiError.conflict('One or more draft sources are unavailable')
+}
+
+async function sourceStates(tx: Prisma.TransactionClient, sources: SourceReference[], organizationId: string) {
+  if (!sources.length) return { state: 'NO_SOURCES' as const, entries: [] as Array<Record<string, unknown>> }
+  const resolved = await tx.draftRevisionSource.findMany({
+    where: { organizationId, chunkId: { in: sources.map(source => source.chunkId) } },
+    select: {
+      documentId: true, versionId: true, chunkId: true,
+      document: { select: { displayName: true, filename: true, status: true, deletedAt: true, activeVersionId: true } },
+      version: { select: { status: true } },
+      chunk: { select: { chunkIndex: true, pageNumber: true, headingPath: true, sectionTitle: true } },
+    },
+  })
+  const byChunk = new Map(resolved.map(row => [row.chunkId, row]))
+  const entries = sources.map(source => {
+    const row = byChunk.get(source.chunkId)
+    const matches = row && row.documentId === source.documentId && row.versionId === source.versionId
+    const unavailable = !matches || row.document.deletedAt !== null || row.document.status === 'DELETED'
+    const current = !unavailable && row.document.activeVersionId === source.versionId &&
+      row.document.status === 'COMPLETED' && row.version.status === 'ACTIVE'
+    return {
+      ...source,
+      availability: unavailable ? 'UNAVAILABLE' : current ? 'CURRENT' : 'STALE',
+      ...(current && row ? {
+        displayName: row.document.displayName,
+        filename: row.document.filename,
+        chunkIndex: row.chunk.chunkIndex,
+        pageNumber: row.chunk.pageNumber,
+        headingPath: row.chunk.headingPath,
+        sectionTitle: row.chunk.sectionTitle,
+      } : {}),
+    }
+  })
+  const state = entries.some(entry => entry.availability === 'UNAVAILABLE') ? 'UNAVAILABLE'
+    : entries.some(entry => entry.availability === 'STALE') ? 'STALE' : 'CURRENT'
+  return { state, entries }
+}
+
+/** True only for the current, unarchived revision with an immutable approval and current sources. */
+export async function isEffectiveDraftApproval(
+  tx: Prisma.TransactionClient | typeof prisma,
+  draftId: string,
+  revisionId: string,
+  organizationId: string
+) {
+  const draft = await tx.draft.findFirst({
+    where: { id: draftId, organizationId },
+    select: { currentRevisionId: true, reviewStatus: true, archivedAt: true },
+  })
+  if (!draft || draft.archivedAt || draft.currentRevisionId !== revisionId || draft.reviewStatus !== 'APPROVED') return false
+  const approved = await tx.draftApproval.findFirst({
+    where: { draftId, revisionId, organizationId, decision: 'APPROVED' }, select: { id: true },
+  })
+  if (!approved) return false
+  const sources = await tx.draftRevisionSource.findMany({
+    where: { draftRevisionId: revisionId, organizationId }, select: { documentId: true, versionId: true, chunkId: true },
+  })
+  return (await sourceStates(tx, sources, organizationId)).state === 'CURRENT' || sources.length === 0
+}
 
 const draftSummarySelect = {
   id: true,
@@ -99,11 +181,7 @@ async function appendRevisionInTransaction(input: {
 }) {
   try {
     return await prisma.$transaction(async tx => {
-      const draft = await tx.draft.findFirst({
-        where: { id: input.draftId, organizationId: input.organizationId },
-        select: { id: true, archivedAt: true, currentRevisionId: true, concurrencyToken: true },
-      })
-      if (!draft) throw ApiError.notFound('Draft not found')
+      const draft = await lockDraft(tx, input.draftId, input.organizationId)
       if (draft.archivedAt) throw ApiError.conflict('Archived drafts cannot be edited')
       if (input.expectedRevisionId !== undefined && draft.currentRevisionId !== input.expectedRevisionId) {
         throw ApiError.conflict('Draft changed; reload the current revision before saving')
@@ -392,10 +470,125 @@ async function archiveDraft(draftId: string, input: ArchiveDraftInput, organizat
   return getDraftById(draftId, organizationId)
 }
 
+async function approveDraft(
+  draftId: string,
+  input: ApproveDraftInput,
+  context: { organizationId: string; userId: string }
+) {
+  await prisma.$transaction(async tx => {
+    const draft = await lockDraft(tx, draftId, context.organizationId)
+    if (draft.archivedAt) throw ApiError.conflict('Archived drafts cannot be approved')
+    if (draft.currentRevisionId !== input.revisionId) throw ApiError.conflict('Only the current revision can be approved')
+    const revision = await tx.draftRevision.findFirst({
+      where: { id: input.revisionId, draftId, organizationId: context.organizationId },
+      select: { id: true, authorId: true, sources: { select: { documentId: true, versionId: true, chunkId: true } } },
+    })
+    if (!revision) throw ApiError.notFound('Draft revision not found')
+    if (revision.authorId === context.userId) throw ApiError.forbidden('A revision author cannot approve their own revision')
+    await lockSourceDocuments(tx, context.organizationId, revision.sources)
+    const resolved = await sourceStates(tx, revision.sources, context.organizationId)
+    if (resolved.state !== 'CURRENT' && revision.sources.length > 0) {
+      throw ApiError.conflict('Draft sources must all be current before approval')
+    }
+    const effective = await isEffectiveDraftApproval(tx, draftId, input.revisionId, context.organizationId)
+    if (effective) throw ApiError.conflict('This revision is already approved')
+    await tx.draftApproval.create({ data: {
+      organizationId: context.organizationId,
+      draftId,
+      revisionId: input.revisionId,
+      reviewerId: context.userId,
+      decision: 'APPROVED',
+      note: input.note,
+    } })
+    const updated = await tx.draft.updateMany({
+      where: { id: draftId, organizationId: context.organizationId, currentRevisionId: input.revisionId, archivedAt: null },
+      data: { reviewStatus: 'APPROVED' },
+    })
+    if (updated.count !== 1) throw ApiError.conflict('Draft changed while approval was being recorded')
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted })
+  return getDraftById(draftId, context.organizationId)
+}
+
+async function requestDraftExport(
+  draftId: string,
+  input: RequestDraftExportInput,
+  context: { organizationId: string; userId: string }
+) {
+  return prisma.$transaction(async tx => {
+    const draft = await lockDraft(tx, draftId, context.organizationId)
+    if (draft.archivedAt) throw ApiError.conflict('Archived drafts cannot be exported')
+    const revision = await tx.draftRevision.findFirst({
+      where: { id: input.revisionId, draftId, organizationId: context.organizationId },
+      select: { id: true, revisionNumber: true, content: true, isRefusal: true, sources: {
+        orderBy: { ordinal: 'asc' }, select: { documentId: true, versionId: true, chunkId: true },
+      } },
+    })
+    if (!revision) throw ApiError.notFound('Draft revision not found')
+    await lockSourceDocuments(tx, context.organizationId, revision.sources)
+    const resolved = await sourceStates(tx, revision.sources, context.organizationId)
+    const approved = await isEffectiveDraftApproval(tx, draftId, revision.id, context.organizationId)
+    if (input.approvedOnly && !approved) throw ApiError.conflict('This exact revision is not currently approved')
+    const request = await tx.draftExportRequest.create({ data: {
+      organizationId: context.organizationId,
+      draftId,
+      revisionId: revision.id,
+      requesterId: context.userId,
+      includeSources: input.includeSources,
+    }, select: { id: true, createdAt: true } })
+    const stale = resolved.state === 'STALE' || resolved.state === 'UNAVAILABLE'
+    const sourceLines = input.includeSources ? resolved.entries.map((source, index) => {
+      if (source.availability !== 'CURRENT') return `[${index + 1}] Source ${source.documentId}: ${String(source.availability).toLowerCase()}`
+      const location = source.pageNumber != null ? `page ${source.pageNumber}`
+        : source.sectionTitle ?? (Array.isArray(source.headingPath) ? source.headingPath.join(' › ') : '')
+      return `[${index + 1}] ${source.displayName} (${location || `passage ${Number(source.chunkIndex) + 1}`})`
+    }) : []
+    return {
+      exportId: request.id,
+      requestedAt: request.createdAt,
+      draftId,
+      revisionId: revision.id,
+      revisionNumber: revision.revisionNumber,
+      approvalStatus: approved ? 'APPROVED' : 'UNAPPROVED',
+      sourceStatus: resolved.state,
+      archived: false,
+      isRefusal: revision.isRefusal,
+      content: revision.content,
+      text: [
+        stale ? 'NOTICE: One or more linked sources are stale or unavailable.' : '',
+        approved ? 'Status: approved revision.' : 'Status: unapproved revision.',
+        revision.content,
+        ...(sourceLines.length ? ['', 'Sources:', ...sourceLines] : []),
+      ].filter(Boolean).join('\n'),
+    }
+  })
+}
+
+async function confirmDraftCopy(
+  draftId: string,
+  exportId: string,
+  context: { organizationId: string; userId: string }
+) {
+  return prisma.$transaction(async tx => {
+    const rows = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      SELECT "id" FROM "draft_export_requests"
+      WHERE "id" = ${exportId} AND "draftId" = ${draftId}
+        AND "organizationId" = ${context.organizationId} AND "requesterId" = ${context.userId}
+      FOR UPDATE
+    `)
+    if (!rows[0]) throw ApiError.notFound('Export request not found')
+    const existing = await tx.draftCopyConfirmation.findFirst({ where: { exportId }, select: { id: true, createdAt: true } })
+    if (existing) throw ApiError.conflict('Copy success was already recorded for this export')
+    return tx.draftCopyConfirmation.create({ data: { exportId }, select: { id: true, createdAt: true } })
+  })
+}
+
 export const draftsService = {
   createDraft,
   listDrafts,
   getDraftById,
   appendRevision,
   archiveDraft,
+  approveDraft,
+  requestDraftExport,
+  confirmDraftCopy,
 }

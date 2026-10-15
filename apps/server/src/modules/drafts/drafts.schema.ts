@@ -44,7 +44,28 @@ export const archiveDraftSchema = z.object({
   }),
 })
 
+export const approveDraftSchema = z.object({
+  params: draftIdParams,
+  body: z.object({ revisionId: z.string().cuid('Invalid revision ID'), note: z.string().trim().max(1000).optional() }),
+})
+
+export const requestDraftExportSchema = z.object({
+  params: draftIdParams,
+  body: z.object({
+    revisionId: z.string().cuid('Invalid revision ID'),
+    includeSources: z.boolean().default(false),
+    approvedOnly: z.boolean().default(false),
+  }),
+})
+
+export const confirmDraftCopySchema = z.object({
+  params: z.object({ id: z.string().cuid('Invalid draft ID'), exportId: z.string().cuid('Invalid export ID') }),
+  body: z.object({}),
+})
+
 export type CreateDraftInput = z.infer<typeof createDraftSchema>['body']
 export type ListDraftsQuery = z.infer<typeof listDraftsSchema>['query']
 export type AppendDraftRevisionInput = z.infer<typeof appendDraftRevisionSchema>['body']
 export type ArchiveDraftInput = z.infer<typeof archiveDraftSchema>['body']
+export type ApproveDraftInput = z.infer<typeof approveDraftSchema>['body']
+export type RequestDraftExportInput = z.infer<typeof requestDraftExportSchema>['body']
