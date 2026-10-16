@@ -15,6 +15,7 @@ import { documentsRouter } from '../modules/documents/documents.router'
 import { groundedAnswersRouter } from '../modules/groundedAnswers/groundedAnswers.router'
 import { usageControlsRouter } from '../modules/usage/usageControls.router'
 import { draftsRouter } from '../modules/drafts/drafts.router'
+import { approvedAnswersRouter } from '../modules/approvedAnswers/approvedAnswers.router'
 // import { dealsRouter } from '../modules/deals/deals.router'
 
 export const router = Router()
@@ -34,6 +35,7 @@ router.use('/documents', documentsRouter)
 router.use('/ai/grounded-answers', groundedAnswersRouter)
 router.use('/usage', usageControlsRouter)
 router.use('/drafts', draftsRouter)
+router.use('/approved-answers', approvedAnswersRouter)
 // router.use('/deals', dealsRouter)
 
 // Placeholder until modules are built

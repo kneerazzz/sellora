@@ -32,6 +32,11 @@ model Organization {
   draftSources     DraftRevisionSource[]
   draftApprovals   DraftApproval[]
   draftExportRequests DraftExportRequest[]
+  approvedAnswers  ApprovedAnswer[]
+  approvedAnswerRevisions ApprovedAnswerRevision[]
+  approvedAnswerSources ApprovedAnswerRevisionSource[]
+  approvedAnswerApprovals ApprovedAnswerApproval[]
+  approvedAnswerInvalidations ApprovedAnswerInvalidation[]
   externalMappings ExternalObjectMapping[]
   integrations     Integration[]
   invites          Invite[]
@@ -76,6 +81,9 @@ model User {
   authoredDraftRevisions DraftRevision[] @relation("DraftRevisionAuthor")
   reviewedDraftApprovals DraftApproval[] @relation("DraftApprovalReviewer")
   requestedDraftExports DraftExportRequest[] @relation("DraftExportRequester")
+  ownedApprovedAnswers ApprovedAnswer[] @relation("ApprovedAnswerOwner")
+  authoredApprovedAnswerRevisions ApprovedAnswerRevision[] @relation("ApprovedAnswerRevisionAuthor")
+  reviewedApprovedAnswerApprovals ApprovedAnswerApproval[] @relation("ApprovedAnswerApprovalReviewer")
   assignedLeads     Lead[]          @relation("AssignedRep")
   createdLeads      Lead[]          @relation("LeadCreator")
   passwordRecoveries PasswordRecovery[]
@@ -150,6 +158,8 @@ model Document {
   chunks         DocumentChunk[]
   versions       DocumentVersion[]
   draftSources   DraftRevisionSource[]
+  approvedAnswerSources ApprovedAnswerRevisionSource[]
+  approvedAnswerInvalidations ApprovedAnswerInvalidation[]
   organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   uploadedBy     User            @relation(fields: [uploadedById], references: [id])
 
@@ -182,6 +192,9 @@ model DocumentVersion {
   publishedAt    DateTime?
   chunks         DocumentChunk[]
   draftSources   DraftRevisionSource[]
+  approvedAnswerSources ApprovedAnswerRevisionSource[]
+  previousApprovedAnswerInvalidations ApprovedAnswerInvalidation[] @relation("ApprovedAnswerInvalidationPreviousVersion")
+  currentApprovedAnswerInvalidations ApprovedAnswerInvalidation[] @relation("ApprovedAnswerInvalidationCurrentVersion")
   document       Document @relation(fields: [documentId, organizationId], references: [id, organizationId], onDelete: Cascade)
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
@@ -209,6 +222,7 @@ model DocumentChunk {
   document      Document               @relation(fields: [documentId], references: [id], onDelete: Cascade)
   version       DocumentVersion        @relation(fields: [versionId, documentId], references: [id, documentId], onDelete: Cascade)
   draftSources  DraftRevisionSource[]
+  approvedAnswerSources ApprovedAnswerRevisionSource[]
 
   @@unique([versionId, chunkIndex])
   @@unique([id, versionId, documentId])
@@ -240,6 +254,10 @@ model Draft {
   currentRevision      DraftRevision?        @relation("CurrentDraftRevision", fields: [currentRevisionId, id, organizationId], references: [id, draftId, organizationId], onDelete: NoAction, onUpdate: NoAction)
   approvals            DraftApproval[]
   exportRequests       DraftExportRequest[]
+  reusedApprovedAnswerId String?
+  reusedApprovedAnswerRevisionId String?
+  reusedApprovedAnswer ApprovedAnswer? @relation("ReusedApprovedAnswer", fields: [reusedApprovedAnswerId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  reusedApprovedAnswerRevision ApprovedAnswerRevision? @relation("ReusedApprovedAnswerRevision", fields: [reusedApprovedAnswerRevisionId, reusedApprovedAnswerId, organizationId], references: [id, approvedAnswerId, organizationId], onDelete: Restrict)
 
   @@unique([organizationId, idempotencyKey])
   @@unique([id, organizationId])
@@ -267,6 +285,7 @@ model DraftRevision {
   sources         DraftRevisionSource[]
   approvals       DraftApproval[]
   exportRequests  DraftExportRequest[]
+  approvedAnswerLineage ApprovedAnswerRevision[] @relation("ApprovedAnswerDraftRevisionLineage")
 
   @@unique([draftId, revisionNumber])
   @@unique([id, draftId, organizationId])
@@ -309,7 +328,9 @@ model DraftApproval {
   draft          Draft                 @relation(fields: [draftId, organizationId], references: [id, organizationId], onDelete: Cascade)
   revision       DraftRevision         @relation(fields: [revisionId, draftId, organizationId], references: [id, draftId, organizationId], onDelete: Restrict)
   reviewer       User                  @relation("DraftApprovalReviewer", fields: [reviewerId, organizationId], references: [id, organizationId])
+  approvedAnswerLineage ApprovedAnswerApproval[] @relation("ApprovedAnswerDraftApprovalLineage")
 
+  @@unique([id, organizationId])
   @@index([organizationId, draftId, createdAt])
   @@index([revisionId, createdAt])
   @@map("draft_approvals")
@@ -341,6 +362,132 @@ model DraftCopyConfirmation {
 
   @@index([exportId, createdAt])
   @@map("draft_copy_confirmations")
+}
+
+model ApprovedAnswer {
+  id                String            @id @default(cuid())
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  title             String
+  question          String
+  tags              String[]
+  reviewStatus      DraftReviewStatus @default(APPROVED)
+  currentRevisionId String?
+  concurrencyToken  Int               @default(1)
+  archivedAt        DateTime?
+  organizationId    String
+  ownerId           String
+  organization      Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  owner             User              @relation("ApprovedAnswerOwner", fields: [ownerId, organizationId], references: [id, organizationId])
+  revisions         ApprovedAnswerRevision[] @relation("ApprovedAnswerRevisions")
+  currentRevision   ApprovedAnswerRevision? @relation("CurrentApprovedAnswerRevision", fields: [currentRevisionId, id, organizationId], references: [id, approvedAnswerId, organizationId], onDelete: NoAction, onUpdate: NoAction)
+  approvals         ApprovedAnswerApproval[]
+  invalidations     ApprovedAnswerInvalidation[]
+  reusedDrafts      Draft[] @relation("ReusedApprovedAnswer")
+
+  @@unique([id, organizationId])
+  @@unique([currentRevisionId, id, organizationId])
+  @@index([organizationId, archivedAt, updatedAt])
+  @@index([organizationId, reviewStatus, updatedAt])
+  @@map("approved_answers")
+}
+
+model ApprovedAnswerRevision {
+  id                    String   @id @default(cuid())
+  createdAt             DateTime @default(now())
+  revisionNumber        Int
+  title                 String
+  question              String
+  content               String
+  tags                  String[]
+  organizationId        String
+  approvedAnswerId      String
+  authorId              String
+  sourceDraftRevisionId String?
+  organization          Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  approvedAnswer        ApprovedAnswer @relation("ApprovedAnswerRevisions", fields: [approvedAnswerId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  currentForAnswer      ApprovedAnswer? @relation("CurrentApprovedAnswerRevision")
+  author                User @relation("ApprovedAnswerRevisionAuthor", fields: [authorId, organizationId], references: [id, organizationId])
+  sourceDraftRevision   DraftRevision? @relation("ApprovedAnswerDraftRevisionLineage", fields: [sourceDraftRevisionId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  sources               ApprovedAnswerRevisionSource[]
+  approvals             ApprovedAnswerApproval[]
+  reusedDrafts          Draft[] @relation("ReusedApprovedAnswerRevision")
+  invalidations         ApprovedAnswerInvalidation[] @relation("ApprovedAnswerInvalidatedRevision")
+  replacementInvalidations ApprovedAnswerInvalidation[] @relation("ApprovedAnswerReplacementRevision")
+
+  @@unique([approvedAnswerId, revisionNumber])
+  @@unique([id, approvedAnswerId, organizationId])
+  @@unique([id, organizationId])
+  @@unique([organizationId, sourceDraftRevisionId])
+  @@index([organizationId, approvedAnswerId, createdAt])
+  @@map("approved_answer_revisions")
+}
+
+model ApprovedAnswerRevisionSource {
+  id                       String @id @default(cuid())
+  createdAt                DateTime @default(now())
+  ordinal                  Int
+  organizationId           String
+  approvedAnswerRevisionId String
+  documentId               String
+  versionId                String
+  chunkId                  String
+  organization             Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  revision                 ApprovedAnswerRevision @relation(fields: [approvedAnswerRevisionId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  document                 Document @relation(fields: [documentId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  version                  DocumentVersion @relation(fields: [versionId, documentId, organizationId], references: [id, documentId, organizationId], onDelete: Restrict)
+  chunk                    DocumentChunk @relation(fields: [chunkId, versionId, documentId], references: [id, versionId, documentId], onDelete: Restrict)
+
+  @@unique([approvedAnswerRevisionId, ordinal])
+  @@unique([approvedAnswerRevisionId, chunkId])
+  @@index([organizationId, documentId, versionId])
+  @@map("approved_answer_revision_sources")
+}
+
+model ApprovedAnswerApproval {
+  id                    String @id @default(cuid())
+  createdAt             DateTime @default(now())
+  reviewedAt            DateTime
+  decision              DraftApprovalDecision
+  note                  String?
+  organizationId        String
+  approvedAnswerId      String
+  revisionId            String
+  reviewerId            String
+  sourceDraftApprovalId String?
+  organization          Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  approvedAnswer        ApprovedAnswer @relation(fields: [approvedAnswerId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  revision              ApprovedAnswerRevision @relation(fields: [revisionId, approvedAnswerId, organizationId], references: [id, approvedAnswerId, organizationId], onDelete: Restrict)
+  reviewer              User @relation("ApprovedAnswerApprovalReviewer", fields: [reviewerId, organizationId], references: [id, organizationId])
+  sourceDraftApproval   DraftApproval? @relation("ApprovedAnswerDraftApprovalLineage", fields: [sourceDraftApprovalId, organizationId], references: [id, organizationId], onDelete: Restrict)
+
+  @@index([organizationId, approvedAnswerId, createdAt])
+  @@index([revisionId, createdAt])
+  @@map("approved_answer_approvals")
+}
+
+model ApprovedAnswerInvalidation {
+  id                    String @id @default(cuid())
+  createdAt             DateTime @default(now())
+  reason                ApprovedAnswerInvalidationReason
+  organizationId        String
+  approvedAnswerId      String
+  invalidatedRevisionId String
+  replacementRevisionId String?
+  documentId            String?
+  previousVersionId     String?
+  currentVersionId      String?
+  organization          Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  approvedAnswer        ApprovedAnswer @relation(fields: [approvedAnswerId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  invalidatedRevision   ApprovedAnswerRevision @relation("ApprovedAnswerInvalidatedRevision", fields: [invalidatedRevisionId, approvedAnswerId, organizationId], references: [id, approvedAnswerId, organizationId], onDelete: Restrict)
+  replacementRevision   ApprovedAnswerRevision? @relation("ApprovedAnswerReplacementRevision", fields: [replacementRevisionId, approvedAnswerId, organizationId], references: [id, approvedAnswerId, organizationId], onDelete: Restrict)
+  document              Document? @relation(fields: [documentId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  previousVersion       DocumentVersion? @relation("ApprovedAnswerInvalidationPreviousVersion", fields: [previousVersionId, documentId, organizationId], references: [id, documentId, organizationId], onDelete: Restrict)
+  currentVersion        DocumentVersion? @relation("ApprovedAnswerInvalidationCurrentVersion", fields: [currentVersionId, documentId, organizationId], references: [id, documentId, organizationId], onDelete: Restrict)
+
+  @@index([organizationId, approvedAnswerId, createdAt])
+  @@index([organizationId, documentId, createdAt])
+  @@map("approved_answer_invalidations")
 }
 
 model Lead {
@@ -1020,6 +1167,12 @@ enum DraftRevisionOrigin {
 enum DraftApprovalDecision {
   APPROVED
   REJECTED
+}
+
+enum ApprovedAnswerInvalidationReason {
+  ANSWER_EDITED
+  SOURCE_REPLACED
+  SOURCE_DELETED
 }
 
 enum SyncDirection {

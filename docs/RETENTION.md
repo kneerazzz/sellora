@@ -8,15 +8,15 @@ authorized operator procedure are recorded.
 
 ## References and reads
 
-Future drafts and approvals must persist `documentId`, `versionId` and `chunkId`
+Drafts, approvals and approved answers persist `documentId`, `versionId` and `chunkId`
 beside their own immutable revision; they must not copy source passage text into
 a permanent citation snapshot. A batch source-reference read returns `CURRENT`
 only when all three IDs belong together, to the caller's organization, and the
 document is nondeleted with that active version. A valid retired version is
 `STALE`; a deleted, failed, missing or foreign source is `UNAVAILABLE`. Foreign
 IDs return no title, text or location. Historical revisions remain unchanged;
-their displayed availability is recomputed whenever read, approved, copied or
-exported. Part 08 must enforce those latter boundaries on the server.
+their displayed availability is recomputed whenever read, approved, copied,
+exported, suggested or reused.
 
 Active source inspection may show a bounded page of chunk text and actual
 location. Retired/deleted inspection returns status and no passage text. Version
@@ -40,7 +40,7 @@ to be clean or zero. The output is a planning manifest, not proof of erasure.
 | --- | --- | --- |
 | Original files | Retained for failed retry and history | Delete each unique owned path after holds and backup plan |
 | Document/version/chunk/vector rows | Retained, excluded from new retrieval | Remove safely with reference tombstones and audit record |
-| Drafts/approvals | Not yet implemented | Retain immutable decision metadata without passage snapshots; recheck source at use |
+| Drafts, approvals and approved answers | Immutable revisions and decisions retained; stale references are excluded from approved use | Retain decision/invalidation metadata without passage snapshots; recheck sources at each approved use |
 | AI/workflow outputs and usage logs | Existing records may include source text | Discover and redact or expire content while preserving required accounting/audit facts |
 | Process/browser caches and exports | Not centrally tracked | Inventory instances and copies; invalidate where controlled |
 | Backups and external copies | Outside immediate API control | Agree expiration and processor procedures; downloaded copies cannot be recalled |

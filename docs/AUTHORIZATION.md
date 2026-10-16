@@ -69,6 +69,15 @@ route; do not infer new read permissions from its name.
 | POST /drafts/:id/exports | Y | Y | Y | — | — | — |
 | POST /drafts/:id/exports/:exportId/copied | Y | Y | Y | — | — | — |
 | DELETE /drafts/:id | Y | Y | Y | — | — | — |
+| GET /approved-answers | Y | Y | Y | — | — | — |
+| POST /approved-answers | Y | Y | Y | — | — | — |
+| GET /approved-answers/suggestions | Y | Y | Y | — | — | — |
+| GET /approved-answers/review-queue | Y | Y | Y | — | — | — |
+| GET /approved-answers/:id | Y | Y | Y | — | — | — |
+| POST /approved-answers/:id/revisions | Y | Y | Y | — | — | — |
+| POST /approved-answers/:id/approvals | Y | Y | — | — | — | — |
+| POST /approved-answers/:id/reuse | Y | Y | Y | — | — | — |
+| DELETE /approved-answers/:id | Y | Y | Y | — | — | — |
 | GET /invites | Y | Y | — | — | — | — |
 | POST /invites | Y | Y | — | — | — | — |
 | DELETE /invites/:id | Y | Y | — | — | — | — |
@@ -126,12 +135,14 @@ for JWT staff under the organization boundary described in
 [DRAFT_CONTRACT.md](DRAFT_CONTRACT.md). Approval is ADMIN/MANAGER-only under the
 local policy and also denies the revision author. Export request and
 browser-reported copy confirmation are separate immutable events; neither marks
-delivery sent. Approved answers and source-file fetches remain unimplemented.
-`/approved-answers` and `/drafts/:id/export` return 404 after any applicable
-draft-router authentication; `/documents/:id/source` passes the document router's
-JWT guard before 404. Part 09 adds library permissions. Browser copy in the
-current draft page is still not connected to durable draft/export APIs; Part 10
-owns the integrated staff journey.
+delivery sent. The approved-answer routes use the same JWT staff boundary.
+ADMIN/MANAGER approval also denies the answer revision author; all other library,
+suggestion, reuse, queue and archive actions allow all three staff roles. Reuse
+creates a new review-required draft and never inherits approval. Source-file
+fetches remain unimplemented. `/drafts/:id/export` returns 404 after draft-router
+authentication; `/documents/:id/source` passes the document router's JWT guard
+before 404. Browser copy and approved-answer actions are not yet connected to the
+staff UI; Part 10 owns the integrated journey.
 
 ## Compatibility and acceptance
 
@@ -169,3 +180,11 @@ draft IDs return 404 for permitted roles, and body organization overrides remain
 rejected. The full disposable suite and cleanup passed with deterministic
 providers. No browser journey, live provider, client acceptance or external
 delivery was tested.
+
+Part 09 extended the matrix on October 16, 2026 to 69 protected routes and 641
+HTTP assertions. Approved-answer records, suggestions, review queue, reuse and
+archive allow JWT staff and deny machine callers; exact-revision approval remains
+ADMIN/MANAGER-only. Foreign entry IDs return 404 for permitted roles. The full
+20-migration disposable suite and cleanup passed with deterministic providers.
+No approved-answer UI, browser journey, live provider or client acceptance was
+tested.

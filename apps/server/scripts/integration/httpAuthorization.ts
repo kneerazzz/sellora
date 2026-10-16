@@ -76,7 +76,7 @@ try {
     callers.push({ kind: scope, token: raw, user: users[0]! })
   }
   callers.push({ kind: 'NONE', token: '', user: users[0]! })
-  const admin = callers[0]!, rep = callers[2]!, full = callers[4]!, hook = callers[5]!
+  const admin = callers[0]!, manager = callers[1]!, rep = callers[2]!, full = callers[4]!, hook = callers[5]!
   const seedLead = (organizationId = org.id, user = rep.user) => prisma.lead.create({ data: {
     firstName: 'Fixture', lastName: 'Lead', organizationId, createdById: user.id, assignedToId: user.id,
   } })
@@ -126,6 +126,55 @@ try {
     } })
   }
   const ownDraft = await seedDraft(), otherDraft = await seedDraft(foreign.id, foreignUser.id)
+  const seedApprovedDraft = async (authorId = rep.user.id) => {
+    const document = await seedDoc(org.id, admin.user.id, `Approved source ${++serial}.`)
+    const chunk = await prisma.documentChunk.findFirstOrThrow({ where: { versionId: document.activeVersionId! } })
+    const draft = await seedDraft(org.id, authorId)
+    await prisma.draftRevisionSource.create({ data: {
+      organizationId: org.id, draftRevisionId: draft.currentRevisionId!, ordinal: 0,
+      documentId: document.id, versionId: document.activeVersionId!, chunkId: chunk.id,
+    } })
+    await prisma.draft.update({ where: { id: draft.id }, data: { reviewStatus: 'APPROVED' } })
+    await prisma.draftApproval.create({ data: {
+      organizationId: org.id, draftId: draft.id, revisionId: draft.currentRevisionId!,
+      reviewerId: manager.user.id, decision: 'APPROVED',
+    } })
+    return draft
+  }
+  const seedApprovedAnswer = async (params: {
+    organizationId?: string
+    ownerId?: string
+    authorId?: string
+    reviewStatus?: 'APPROVED' | 'REQUIRED'
+  } = {}) => {
+    const organizationId = params.organizationId ?? org.id
+    const ownerId = params.ownerId ?? admin.user.id
+    const authorId = params.authorId ?? rep.user.id
+    const reviewerId = organizationId === org.id ? manager.user.id : foreignUser.id
+    const document = await seedDoc(organizationId, ownerId, `Approved answer source ${++serial}.`)
+    const chunk = await prisma.documentChunk.findFirstOrThrow({ where: { versionId: document.activeVersionId! } })
+    const answer = await prisma.approvedAnswer.create({ data: {
+      organizationId, ownerId, title: 'Fixture approved answer', question: 'What is the fixture policy?',
+      tags: ['fixture'], currentRevisionId: null, reviewStatus: params.reviewStatus ?? 'APPROVED',
+    } })
+    const revision = await prisma.approvedAnswerRevision.create({ data: {
+      organizationId, approvedAnswerId: answer.id, authorId, revisionNumber: 1,
+      title: answer.title, question: answer.question, tags: answer.tags, content: 'Fixture approved answer.',
+    } })
+    await prisma.approvedAnswerRevisionSource.create({ data: {
+      organizationId, approvedAnswerRevisionId: revision.id, ordinal: 0,
+      documentId: document.id, versionId: document.activeVersionId!, chunkId: chunk.id,
+    } })
+    await prisma.approvedAnswer.update({ where: { id: answer.id }, data: { currentRevisionId: revision.id } })
+    if ((params.reviewStatus ?? 'APPROVED') === 'APPROVED') await prisma.approvedAnswerApproval.create({ data: {
+      organizationId, approvedAnswerId: answer.id, revisionId: revision.id,
+      reviewerId, decision: 'APPROVED', reviewedAt: new Date(),
+    } })
+    return { ...answer, currentRevisionId: revision.id }
+  }
+  const ownApprovedAnswer = await seedApprovedAnswer()
+  const otherApprovedAnswer = await seedApprovedAnswer({ organizationId: foreign.id,
+    ownerId: foreignUser.id, authorId: foreignUser.id })
   const otherIntegration = await prisma.integration.create({ data: { organizationId: foreign.id, provider: 'HUBSPOT', label: 'Foreign' } })
   const seedKey = (organizationId = org.id) => prisma.apiKey.create({ data: { organizationId, label: 'Fixture', scope: 'FULL_ACCESS',
     keyHash: sha256Hex(`fixture-key-${++serial}`), keyPrefix: 'fixture' } })
@@ -239,6 +288,36 @@ try {
         const request = await prisma.draftExportRequest.create({ data: { organizationId: org.id, draftId: draft.id,
           revisionId: draft.currentRevisionId!, requesterId: c.user.id } })
         return { route: `/drafts/${draft.id}/exports/${request.id}/copied`, body: {} } } },
+    { method: 'GET', route: '/approved-answers', allow: staff },
+    { method: 'GET', route: '/approved-answers/suggestions?question=fixture%20policy', allow: staff },
+    { method: 'GET', route: '/approved-answers/review-queue', allow: staff },
+    { method: 'POST', route: '/approved-answers', allow: staff, status: 201,
+      setup: async c => { const draft = await seedApprovedDraft(c.user.id); return { body: {
+        draftId: draft.id, revisionId: draft.currentRevisionId, title: `Authorized answer ${++serial}`,
+      } } } },
+    { method: 'GET', route: `/approved-answers/${ownApprovedAnswer.id}`, allow: staff },
+    { method: 'POST', route: '/approved-answers/:id/revisions', allow: staff,
+      setup: async c => { const answer = await seedApprovedAnswer({ ownerId: c.user.id, authorId: c.user.id }); return {
+        route: `/approved-answers/${answer.id}/revisions`, body: {
+          expectedRevisionId: answer.currentRevisionId, content: 'Authorized approved answer correction.',
+        },
+      } } },
+    { method: 'POST', route: '/approved-answers/:id/approvals', allow: managers,
+      setup: async c => { const author = users.find(user => user.id !== c.user.id)!;
+        const answer = await seedApprovedAnswer({ authorId: author.id, reviewStatus: 'REQUIRED' }); return {
+          route: `/approved-answers/${answer.id}/approvals`, body: { revisionId: answer.currentRevisionId },
+        } } },
+    { method: 'POST', route: '/approved-answers/:id/reuse', allow: staff, status: 201,
+      setup: async c => { const answer = await seedApprovedAnswer(); return {
+        route: `/approved-answers/${answer.id}/reuse`, body: {
+          expectedRevisionId: answer.currentRevisionId, idempotencyKey: `authz-reuse-${++serial}`,
+          question: 'What is the fixture policy?',
+        },
+      } } },
+    { method: 'DELETE', route: '/approved-answers/:id', allow: staff,
+      setup: async c => { const answer = await seedApprovedAnswer({ ownerId: c.user.id }); return {
+        route: `/approved-answers/${answer.id}`, body: { expectedConcurrencyToken: answer.concurrencyToken },
+      } } },
     { method: 'POST', route: '/api-keys', allow: managers, status: 201, body: { label: 'Fixture', scope: 'READ_ONLY' } },
     { method: 'DELETE', route: '/api-keys/:id', allow: managers, setup: async () => ({ route: `/api-keys/${(await seedKey()).id}` }) },
     { method: 'GET', route: '/invites', allow: managers },
@@ -312,6 +391,19 @@ try {
       { revisionId: otherDraft.currentRevisionId }, caller.kind === 'ADMIN' || caller.kind === 'MANAGER' ? 404 : 403)
     await request('POST', `/drafts/${otherDraft.id}/exports`, caller.token,
       { revisionId: otherDraft.currentRevisionId }, 404)
+    await request('GET', `/approved-answers/${otherApprovedAnswer.id}`, caller.token, undefined, 404)
+    await request('POST', `/approved-answers/${otherApprovedAnswer.id}/revisions`, caller.token,
+      { expectedRevisionId: otherApprovedAnswer.currentRevisionId, content: 'Forbidden edit' }, 404)
+    await request('DELETE', `/approved-answers/${otherApprovedAnswer.id}`, caller.token,
+      { expectedConcurrencyToken: otherApprovedAnswer.concurrencyToken }, 404)
+    await request('POST', `/approved-answers/${otherApprovedAnswer.id}/approvals`, caller.token,
+      { revisionId: otherApprovedAnswer.currentRevisionId },
+      caller.kind === 'ADMIN' || caller.kind === 'MANAGER' ? 404 : 403)
+    await request('POST', `/approved-answers/${otherApprovedAnswer.id}/reuse`, caller.token, {
+      expectedRevisionId: otherApprovedAnswer.currentRevisionId,
+      idempotencyKey: `foreign-reuse-${caller.kind.toLowerCase()}`,
+      question: 'What is the fixture policy?',
+    }, 404)
   }
   for (const caller of [admin, full]) {
     const before = providerCalls
@@ -431,7 +523,6 @@ try {
     await request('POST', '/ai/grounded-answers', raw, { question: 'refund policy' }, 401)
     await request('POST', '/webhooks/manual-question', raw, { payload: {} }, 401)
   }
-  for (const caller of callers) await request('GET', '/approved-answers', caller.token, undefined, 404)
   for (const caller of callers) await request('GET', `/drafts/${ownDraft.id}/export`, caller.token, undefined,
     staff.includes(caller.kind) ? 404 : 401)
   // Document router authenticates before its unmatched-path 404.

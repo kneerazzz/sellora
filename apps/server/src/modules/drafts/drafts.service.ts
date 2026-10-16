@@ -116,6 +116,8 @@ const draftSummarySelect = {
   currentRevisionId: true,
   concurrencyToken: true,
   archivedAt: true,
+  reusedApprovedAnswerId: true,
+  reusedApprovedAnswerRevisionId: true,
   author: { select: { id: true, firstName: true, lastName: true } },
   currentRevision: {
     select: { id: true, revisionNumber: true, content: true, isRefusal: true, createdAt: true },
@@ -255,6 +257,8 @@ async function getDraftById(id: string, organizationId: string) {
       currentRevisionId: true,
       concurrencyToken: true,
       archivedAt: true,
+      reusedApprovedAnswerId: true,
+      reusedApprovedAnswerRevisionId: true,
       author: { select: { id: true, firstName: true, lastName: true } },
       revisions: {
         orderBy: { revisionNumber: 'desc' },

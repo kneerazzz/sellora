@@ -29,6 +29,7 @@ import type {
 } from './documents.schema'
 import { withWorkloadReservation } from '../usage/workloadReservations.service'
 import { withRecordedUsageAttempt } from '../usage/usageLedger.service'
+import { invalidateApprovedAnswersForDocument } from '../approvedAnswers/approvedAnswerInvalidation'
 
 const documentSelect = {
   id: true,
@@ -701,6 +702,13 @@ async function deleteDocument(documentId: string, organizationId: string, expect
     } })
     if (expectedActiveVersionId) await tx.documentVersion.updateMany({
       where: { id: expectedActiveVersionId, documentId, status: 'ACTIVE' }, data: { status: 'RETIRED' },
+    })
+    await invalidateApprovedAnswersForDocument(tx, {
+      organizationId,
+      documentId,
+      previousVersionId: expectedActiveVersionId,
+      currentVersionId: null,
+      reason: 'SOURCE_DELETED',
     })
     return tx.document.findUniqueOrThrow({ where: { id: documentId }, select: documentSelect })
   })

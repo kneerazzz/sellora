@@ -2,6 +2,7 @@ import type { Prisma } from '@prisma/client'
 import type { ChunkedBlock } from '../../services/document/chunking.service'
 import { EMBEDDING_MODEL, validateEmbeddings } from '../../utils/embeddingContract'
 import { ApiError } from '../../utils/apiError'
+import { invalidateApprovedAnswersForDocument } from '../approvedAnswers/approvedAnswerInvalidation'
 
 type VectorWriter = (chunks: Array<{ id: string; embedding: number[] }>, tx: Prisma.TransactionClient) => Promise<void>
 
@@ -63,5 +64,12 @@ export async function persistIngestedChunks(
     embeddingModel: embeddings !== null ? EMBEDDING_MODEL : null,
     pageCount: params.pageCount ?? null, publishedAt: now, errorMessage: null,
   } })
+  await invalidateApprovedAnswersForDocument(tx, {
+    organizationId: version.organizationId,
+    documentId,
+    previousVersionId: params.expectedActiveVersionId,
+    currentVersionId: versionId,
+    reason: 'SOURCE_REPLACED',
+  })
   return tx.document.findUniqueOrThrow({ where: { id: documentId } })
 }

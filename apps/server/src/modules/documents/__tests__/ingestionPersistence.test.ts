@@ -12,6 +12,7 @@ function fixture(publishCount = 1) {
   const events: string[] = []
   let publication: any
   const tx = {
+    $queryRaw: async () => [],
     documentVersion: {
       findUniqueOrThrow: async () => ({ documentId: 'doc', organizationId: 'org', status: 'BUILDING',
         filename: 'file.txt', mimeType: 'text/plain', sizeBytes: 8, fileType: 'TXT', storagePath: '/original' }),
