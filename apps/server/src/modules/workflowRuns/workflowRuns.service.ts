@@ -8,6 +8,8 @@ import { groundedAnswersService } from '../groundedAnswers/groundedAnswers.servi
 import type { PaginatedResult } from '../../types/pagination.types'
 import type { ListWorkflowRunsQuery } from './workflowRuns.schema'
 import { ProviderOperationError } from '../../services/provider/providerTransport'
+import { createGmailReviewTask, type GmailReviewAnswer } from '../drafts/gmailReviewTask'
+import { gmailReceivedSchema } from '../webhooks/webhooks.schema'
 import { claimWorkflow, checkpointWorkflow, finalizeWorkflow, heartbeatWorkflow, retryDelayMs, workflowLeasePolicy, type WorkflowClaim } from './workflowLease'
 
 type SalesResult = Awaited<ReturnType<typeof aiExtractionsService.extractSalesEvent>>
@@ -187,7 +189,9 @@ async function processClaimedWorkflowRun(claim: WorkflowClaim, userId?: string, 
       webhookEvent: {
         select: {
           id: true,
+          source: true,
           eventType: true,
+          externalObjectType: true,
           payload: true,
         },
       },
@@ -195,6 +199,11 @@ async function processClaimedWorkflowRun(claim: WorkflowClaim, userId?: string, 
   })
 
   if (!workflowRun) throw ApiError.notFound('Workflow run not found')
+  const gmailMessage = workflowRun.webhookEvent?.source === 'GMAIL' &&
+    workflowRun.webhookEvent.eventType === 'EMAIL_RECEIVED' &&
+    workflowRun.webhookEvent.externalObjectType === 'EMAIL'
+    ? gmailReceivedSchema.shape.body.safeParse(workflowRun.webhookEvent.payload) : null
+  const gmailEvent = gmailMessage?.success ? { id: workflowRun.webhookEvent!.id, message: gmailMessage.data } : null
   const abort = new AbortController()
   const onAbort = () => abort.abort(signal?.reason)
   if (signal?.aborted) onAbort()
@@ -283,7 +292,10 @@ async function processClaimedWorkflowRun(claim: WorkflowClaim, userId?: string, 
       if (!saved) throw ApiError.conflict('Workflow lease was lost before extraction checkpoint')
     }
 
-    const buyerQuestions = result.extraction.buyerQuestions ?? []
+    const extractedQuestions = result.extraction.buyerQuestions ?? []
+    const buyerQuestions = gmailEvent
+      ? extractedQuestions.map(question => question.trim().slice(0, 1000)).filter(question => question.length >= 3).slice(0, 3)
+      : extractedQuestions
     
     if (buyerQuestions.length > 0) {
       for (let index = groundedAnswers.length; index < buyerQuestions.length; index += 1) {
@@ -307,7 +319,8 @@ async function processClaimedWorkflowRun(claim: WorkflowClaim, userId?: string, 
           })
         } catch (error) {
           if (abort.signal.aborted) throw error
-          console.error('Failed to get grounded answer for workflow question', error)
+          if (gmailEvent) console.error('Failed to prepare Gmail review answer')
+          else console.error('Failed to get grounded answer for workflow question', error)
           groundedAnswers.push({ question, answer: null, refused: true, error: 'Answer processing failed', citations: [] })
         }
         const saved = await checkpointWorkflow(claim,
@@ -317,23 +330,40 @@ async function processClaimedWorkflowRun(claim: WorkflowClaim, userId?: string, 
       }
     }
 
-    const finalOutput = { ...result, groundedAnswers }
+    const draftId = gmailEvent ? await createGmailReviewTask({
+      claim, eventId: gmailEvent.id, message: gmailEvent.message,
+      answers: groundedAnswers.slice(0, 3) as GmailReviewAnswer[],
+      issue: extractedQuestions.length > buyerQuestions.length ? 'Additional buyer questions need manual review' : undefined,
+    }) : null
+    if (gmailEvent && !draftId) throw ApiError.conflict('Workflow lease was lost before draft creation')
+    const finalOutput = { ...result, groundedAnswers, ...(draftId && { draftId }) }
 
     await finalizeWorkflow(claim, {
         status: 'COMPLETED',
-        reviewStatus: groundedAnswers.some(answer => answer.refused) ? 'REQUIRED' : 'NOT_REQUESTED',
+        reviewStatus: gmailEvent || groundedAnswers.some(answer => answer.refused) ? 'REQUIRED' : 'NOT_REQUESTED',
         confidence: result.extraction.confidence,
         output: finalOutput as unknown as Prisma.InputJsonValue,
         errorMessage: null,
     })
     return getWorkflowRunById(claim.id, claim.organizationId)
   } catch (err) {
-    const message = err instanceof Error && err.message.trim() ? err.message : 'Workflow processing failed'
+    const message = gmailEvent ? 'Gmail review processing failed' :
+      err instanceof Error && err.message.trim() ? err.message : 'Workflow processing failed'
     const retryable = !heartbeatLost && (signal?.aborted ||
       (err instanceof ProviderOperationError ? err.retryable : !(err instanceof ApiError) || err.statusCode >= 500))
     const willRetry = retryable && claim.attemptCount < claim.maxAttempts
+    if (gmailEvent && !willRetry && !heartbeatLost && !signal?.aborted) {
+      try {
+        const draftId = await createGmailReviewTask({ claim, eventId: gmailEvent.id, message: gmailEvent.message,
+          answers: [], issue: 'Email extraction failed; review the original message manually' })
+        if (draftId) await checkpointWorkflow(claim, { kind: 'GMAIL_REVIEW_FAILURE', draftId }, 'Email review task needs manual work')
+      } catch {
+        console.error('Failed to record Gmail review task')
+      }
+    }
     await finalizeWorkflow(claim, {
       status: willRetry ? 'RETRY_WAIT' : 'FAILED',
+      ...(gmailEvent && !willRetry && { reviewStatus: 'REQUIRED' }),
       errorMessage: message,
       nextAttemptAt: willRetry ? new Date(Date.now() + retryDelayMs(claim.attemptCount)) : undefined,
     })

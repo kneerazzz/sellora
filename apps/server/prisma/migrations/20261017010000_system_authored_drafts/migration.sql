@@ -1,0 +1,2 @@
+ALTER TABLE "drafts" ALTER COLUMN "authorId" DROP NOT NULL;
+ALTER TABLE "draft_revisions" ALTER COLUMN "authorId" DROP NOT NULL;

@@ -59,7 +59,9 @@ export const gmailReceivedSchema = z.object({
     text: z.string().trim().min(1).max(16000),
     messageDate: z.string().datetime(),
     sizeEstimate: z.number().int().min(1).max(131072),
-  }).strict(),
+  }).strict().refine(message => message.from.toLowerCase() !== message.to.toLowerCase(), {
+    message: 'Self-addressed Gmail messages are excluded', path: ['from'],
+  }),
 })
 
 export type GmailReceivedInput = z.infer<typeof gmailReceivedSchema>['body']

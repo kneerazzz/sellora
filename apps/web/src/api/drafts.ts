@@ -21,7 +21,7 @@ export interface DraftRevision {
   content: string
   origin: 'GENERATED' | 'MANUAL'
   isRefusal: boolean
-  author: { id: string; firstName: string; lastName: string }
+  author: { id: string; firstName: string; lastName: string } | null
   sources: DraftSource[]
 }
 
@@ -40,7 +40,7 @@ export interface Draft {
   archivedAt: string | null
   reusedApprovedAnswerId: string | null
   reusedApprovedAnswerRevisionId: string | null
-  author: { id: string; firstName: string; lastName: string }
+  author: { id: string; firstName: string; lastName: string } | null
   currentRevision: Pick<DraftRevision, 'id' | 'revisionNumber' | 'content' | 'isRefusal' | 'createdAt'> | null
   revisions?: DraftRevision[]
   approvals?: Array<{ id: string; createdAt: string; decision: string; note: string | null; revisionId: string; reviewer: { id: string; firstName: string; lastName: string } }>

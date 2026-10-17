@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Eye } from 'lucide-react'
 import { getErrorMessage } from '@/api/client'
 import { actOnWorkflowRun, getWorkflowRun, listWorkflowRuns } from '@/api/workflowRuns'
@@ -37,6 +38,8 @@ export function WorkflowRunsPage() {
   const [detailError, setDetailError] = useState('')
   const [detailLoading, setDetailLoading] = useState(false)
   const [actionPending, setActionPending] = useState(false)
+  const draftId = detail?.output && typeof detail.output === 'object' && !Array.isArray(detail.output) &&
+    'draftId' in detail.output && typeof detail.output.draftId === 'string' ? detail.output.draftId : null
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -182,6 +185,7 @@ export function WorkflowRunsPage() {
               {detail.reviewStatus === 'REQUIRED' && <span className="text-amber-300">Review required</span>}
             </div>
             {detail.errorMessage && <p className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-red-200">{detail.errorMessage}</p>}
+            {draftId && <Link className="inline-block text-amber-200 underline" to={`/draft/${draftId}`} onClick={() => setDetailOpen(false)}>Open review task</Link>}
             {detail.status === 'RETRY_WAIT' && detail.nextAttemptAt &&
               <p className="text-amber-300">Scheduled retry: {formatDate(detail.nextAttemptAt)}</p>}
             <div className="flex gap-2">

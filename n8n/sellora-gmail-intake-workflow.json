@@ -25,7 +25,7 @@
       "position": [480, 240],
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const email = $json;\nconst from = email.from?.value?.[0]?.address;\nconst to = email.to?.value?.[0]?.address;\nif (!email.id || !email.threadId || !from || !to || !email.subject || !email.text || !email.date || !email.sizeEstimate) throw new Error('Gmail message lacks required intake fields');\nif (email.sizeEstimate > 131072 || email.text.length > 16000) throw new Error('Gmail message exceeds intake limit');\nreturn { json: { version: 1, messageId: email.id, threadId: email.threadId, from, to, subject: email.subject, text: email.text, messageDate: email.date, sizeEstimate: email.sizeEstimate } };"
+        "jsCode": "const email = $json;\nconst from = email.from?.value?.[0]?.address;\nconst to = email.to?.value?.[0]?.address;\nif (!email.id || !email.threadId || !from || !to || !email.subject || !email.text || !email.date || !email.sizeEstimate) throw new Error('Gmail message lacks required intake fields');\nif (from.toLowerCase() === to.toLowerCase()) throw new Error('Self-addressed message excluded');\nif (email.sizeEstimate > 131072 || email.text.length > 16000) throw new Error('Gmail message exceeds intake limit');\nreturn { json: { version: 1, messageId: email.id, threadId: email.threadId, from, to, subject: email.subject, text: email.text, messageDate: email.date, sizeEstimate: email.sizeEstimate } };"
       }
     },
     {

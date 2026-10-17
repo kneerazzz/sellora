@@ -247,9 +247,9 @@ model Draft {
   concurrencyToken     Int                   @default(0)
   archivedAt           DateTime?
   organizationId       String
-  authorId             String
+  authorId             String?
   organization         Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  author               User                  @relation("DraftAuthor", fields: [authorId, organizationId], references: [id, organizationId])
+  author               User?                 @relation("DraftAuthor", fields: [authorId, organizationId], references: [id, organizationId])
   revisions            DraftRevision[]       @relation("DraftRevisions")
   currentRevision      DraftRevision?        @relation("CurrentDraftRevision", fields: [currentRevisionId, id, organizationId], references: [id, draftId, organizationId], onDelete: NoAction, onUpdate: NoAction)
   approvals            DraftApproval[]
@@ -277,11 +277,11 @@ model DraftRevision {
   aiInteractionId String?
   organizationId  String
   draftId         String
-  authorId        String
+  authorId        String?
   organization    Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   draft           Draft                 @relation("DraftRevisions", fields: [draftId, organizationId], references: [id, organizationId], onDelete: Cascade)
   currentForDraft Draft?                @relation("CurrentDraftRevision")
-  author          User                  @relation("DraftRevisionAuthor", fields: [authorId, organizationId], references: [id, organizationId])
+  author          User?                 @relation("DraftRevisionAuthor", fields: [authorId, organizationId], references: [id, organizationId])
   sources         DraftRevisionSource[]
   approvals       DraftApproval[]
   exportRequests  DraftExportRequest[]
