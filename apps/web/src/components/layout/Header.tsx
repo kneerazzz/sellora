@@ -6,10 +6,13 @@ import { Button } from '@/components/ui/Button'
 
 const routeLabels: Record<string, string> = {
   '/': 'Dashboard',
-  '/draft': 'Draft a reply',
+  '/draft': 'Drafts',
   '/documents': 'Knowledge',
-  '/api-keys': 'API Keys',
+  '/approved-answers': 'Approved answers',
   '/workflow-runs': 'Activity',
+  '/settings': 'Settings',
+  '/api-keys': 'API keys',
+  '/usage': 'Usage',
   '/team': 'Team',
 }
 
@@ -27,18 +30,18 @@ export function Header({ sidebarCollapsed }: HeaderProps) {
   return (
     <header
       className={cn(
-        'fixed top-0 right-0 z-20 flex h-16 items-center justify-between border-b border-white/10 glass px-6 transition-all duration-300',
-        sidebarCollapsed ? 'left-[72px]' : 'left-64'
+        'fixed top-0 right-0 z-20 flex h-16 items-center justify-between gap-2 border-b border-white/10 glass px-4 transition-all duration-300 sm:px-6',
+        sidebarCollapsed ? 'left-0 sm:left-[72px]' : 'left-0 sm:left-64'
       )}
     >
-      <nav className="flex items-center gap-1.5 text-sm text-zinc-500">
+      <nav className="flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap text-sm text-zinc-500">
         <Link to="/" className="transition-colors hover:text-zinc-300">
           Home
         </Link>
         {crumbs.map((crumb, i) => (
-          <span key={`${crumb}-${i}`} className="flex items-center gap-1.5">
+          <span key={`${crumb}-${i}`} className="flex min-w-0 items-center gap-1.5">
             <ChevronRight className="h-3.5 w-3.5" />
-            <span className={i === crumbs.length - 1 ? 'text-zinc-200' : ''}>{crumb}</span>
+            <span className={cn('truncate', i === crumbs.length - 1 ? 'text-zinc-200' : '')}>{crumb}</span>
           </span>
         ))}
       </nav>

@@ -12,6 +12,13 @@ import { DocumentsPage } from '@/pages/DocumentsPage'
 import { TeamPage } from '@/pages/TeamPage'
 import { WorkflowRunsPage } from '@/pages/WorkflowRunsPage'
 import { UsagePage } from '@/pages/UsagePage'
+import { SettingsPage } from '@/pages/SettingsPage'
+import { useAuth } from '@/context/AuthContext'
+
+function ManagerRoute({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth()
+  return user?.role === 'ADMIN' || user?.role === 'MANAGER' ? children : <Navigate to="/settings" replace />
+}
 
 export default function App() {
   return (
@@ -48,10 +55,14 @@ export default function App() {
             <Route path="draft/:id" element={<DraftPage />} />
             <Route path="approved-answers" element={<ApprovedAnswersPage />} />
             <Route path="documents" element={<DocumentsPage />} />
-            <Route path="api-keys" element={<ApiKeysPage />} />
             <Route path="workflow-runs" element={<WorkflowRunsPage />} />
-            <Route path="usage" element={<UsagePage />} />
-            <Route path="team" element={<TeamPage />} />
+            <Route path="settings" element={<SettingsPage />} />
+            <Route path="settings/team" element={<TeamPage />} />
+            <Route path="settings/api-keys" element={<ManagerRoute><ApiKeysPage /></ManagerRoute>} />
+            <Route path="settings/usage" element={<ManagerRoute><UsagePage /></ManagerRoute>} />
+            <Route path="api-keys" element={<Navigate to="/settings/api-keys" replace />} />
+            <Route path="usage" element={<Navigate to="/settings/usage" replace />} />
+            <Route path="team" element={<Navigate to="/settings/team" replace />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

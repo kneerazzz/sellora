@@ -3,22 +3,22 @@ import {
   ChevronLeft,
   ChevronRight,
   FileText,
-  KeyRound,
   LayoutDashboard,
   MessageSquare,
-  Users,
+  BookOpenCheck,
+  Settings,
   Workflow,
-  Gauge,
   Zap,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useAuth } from '@/context/AuthContext'
 
-const navItems = [
+export const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
-  { to: '/draft', label: 'Draft a reply', icon: MessageSquare },
+  { to: '/draft', label: 'Drafts', icon: MessageSquare },
   { to: '/documents', label: 'Knowledge', icon: FileText },
+  { to: '/approved-answers', label: 'Approved answers', icon: BookOpenCheck },
   { to: '/workflow-runs', label: 'Activity', icon: Workflow },
+  { to: '/settings', label: 'Settings', icon: Settings },
 ]
 
 interface SidebarProps {
@@ -27,17 +27,10 @@ interface SidebarProps {
 }
 
 export function Sidebar({ collapsed, onToggle }: SidebarProps) {
-  const { user } = useAuth()
-  const settingsItems = [
-    ...(user?.role === 'ADMIN' || user?.role === 'MANAGER'
-      ? [{ to: '/api-keys', label: 'API Keys', icon: KeyRound }, { to: '/usage', label: 'Usage', icon: Gauge }]
-      : []),
-    { to: '/team', label: 'Team', icon: Users },
-  ]
   return (
     <aside
       className={cn(
-        'fixed left-0 top-0 z-30 flex h-screen flex-col border-r border-white/10 glass transition-all duration-300',
+        'fixed left-0 top-0 z-30 hidden h-screen flex-col border-r border-white/10 glass transition-all duration-300 sm:flex',
         collapsed ? 'w-[72px]' : 'w-64'
       )}
     >
@@ -74,19 +67,6 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             {!collapsed && <span>{label}</span>}
           </NavLink>
         ))}
-        <div className="!mt-6 border-t border-white/10 pt-3">
-          {!collapsed && <p className="px-3 pb-2 text-xs font-medium text-zinc-500">Settings</p>}
-          {settingsItems.map(({ to, label, icon: Icon }) => (
-            <NavLink key={to} to={to} aria-label={label} title={collapsed ? label : undefined}
-              className={({ isActive }) => cn(
-                'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
-                isActive ? 'bg-white/10 text-white' : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-100'
-              )}>
-              <Icon className="h-4 w-4 shrink-0" />
-              {!collapsed && <span>{label}</span>}
-            </NavLink>
-          ))}
-        </div>
       </nav>
 
       <button

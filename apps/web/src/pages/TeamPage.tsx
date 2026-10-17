@@ -62,7 +62,7 @@ export function TeamPage() {
       setEmail('')
       await load()
     } catch (err) {
-      setError(getErrorMessage(err, 'Failed to send invite'))
+      setError(getErrorMessage(err, 'Could not create invite link'))
     } finally {
       setInviting(false)
     }
@@ -82,7 +82,7 @@ export function TeamPage() {
       <div>
         <h1 className="text-2xl font-semibold text-white">Team</h1>
         <p className="mt-1 text-sm text-zinc-400">
-          Manage active members and invite new users to your organization.
+          See team members and create private invite links for your organization.
         </p>
       </div>
 
@@ -119,7 +119,7 @@ export function TeamPage() {
             </div>
             <Button type="submit" loading={inviting} className="gap-2 sm:mb-0">
               <UserPlus className="h-4 w-4" />
-              Send invite
+              Create invite link
             </Button>
           </form>
 

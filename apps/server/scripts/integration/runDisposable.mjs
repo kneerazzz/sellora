@@ -49,6 +49,9 @@ try {
   run(process.execPath, ['node_modules/prisma/build/index.js', 'migrate', 'deploy'], env)
   run(process.execPath, ['node_modules/prisma/build/index.js', 'migrate', 'deploy'], env)
   console.log('PASS clean Prisma deployment and repeat deployment')
+  if (process.argv.includes('--browser-only')) {
+    run(process.execPath, ['--import', 'tsx', 'scripts/integration/draftsBrowser.ts'], env)
+  } else {
   run(process.execPath, ['--import', 'tsx', 'scripts/integration/startup.ts'], env)
   run(process.execPath, ['--import', 'tsx', 'scripts/integration/httpKnowledge.ts'], env)
   run(process.execPath, ['--import', 'tsx', 'scripts/integration/httpSessions.ts'], env)
@@ -79,6 +82,7 @@ try {
   run(process.execPath, ['--import', 'tsx', 'scripts/integration/knowledgePath.ts'], {
     ...env, SELLORA_DISPOSABLE_DATABASE_URL: `${base}/sellora_test_knowledge`,
   })
+  }
 } finally {
   if (created) {
     run('docker', ['rm', '-f', '-v', name], process.env, true)

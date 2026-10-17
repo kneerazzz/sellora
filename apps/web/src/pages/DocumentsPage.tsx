@@ -118,7 +118,7 @@ export function DocumentsPage() {
       <tbody>{loading && documents.length === 0
         ? <tr><td colSpan={7} className="px-5 py-10 text-center text-zinc-500">Loading documents…</td></tr>
         : documents.length === 0
-          ? <tr><td colSpan={7} className="px-5 py-10 text-center text-zinc-500">No documents yet.</td></tr>
+          ? <tr><td colSpan={7} className="px-5 py-10 text-center text-zinc-500">{canManage ? 'No documents yet. Upload a company document to give draft replies a source.' : 'No documents yet. Ask a manager to upload a company document.'}</td></tr>
           : documents.map(doc => {
             const status = mapDocumentStatus(doc.status)
             return <tr key={doc.id} className="border-b border-white/5">
