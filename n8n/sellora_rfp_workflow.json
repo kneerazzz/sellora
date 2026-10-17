@@ -4,7 +4,11 @@
     {
       "parameters": {
         "pollTimes": {
-          "item": [{ "mode": "everyMinute" }]
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
         },
         "triggerOn": "specificFolder",
         "folderToWatch": {
@@ -22,7 +26,10 @@
       "name": "Google Drive – Watch RFP Folder",
       "type": "n8n-nodes-base.googleDriveTrigger",
       "typeVersion": 1,
-      "position": [0, 300],
+      "position": [
+        0,
+        300
+      ],
       "credentials": {
         "googleDriveOAuth2Api": {
           "id": "gdrive_cred",
@@ -45,7 +52,10 @@
       "name": "Google Drive – Download PDF",
       "type": "n8n-nodes-base.googleDrive",
       "typeVersion": 3,
-      "position": [220, 300],
+      "position": [
+        220,
+        300
+      ],
       "credentials": {
         "googleDriveOAuth2Api": {
           "id": "gdrive_cred",
@@ -61,7 +71,10 @@
       "name": "Prepare File Metadata",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [440, 300]
+      "position": [
+        440,
+        300
+      ]
     },
     {
       "parameters": {
@@ -73,7 +86,10 @@
       "name": "Extract PDF Text",
       "type": "n8n-nodes-base.extractFromFile",
       "typeVersion": 1,
-      "position": [660, 300],
+      "position": [
+        660,
+        300
+      ],
       "notes": "Built-in n8n node. Reads the binary PDF and outputs raw text string. Handles tables, columns, multi-page PDFs."
     },
     {
@@ -84,7 +100,10 @@
       "name": "Clean & Validate Text",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [880, 300]
+      "position": [
+        880,
+        300
+      ]
     },
     {
       "parameters": {
@@ -103,7 +122,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"rfpText\": {{ JSON.stringify($json.rfpText) }},\n  \"documentContext\": {\n    \"sourceFile\": {{ JSON.stringify($json.fileName) }},\n    \"charCount\": {{ $json.charCount }},\n    \"estimatedPages\": {{ $json.estimatedPages }}\n  }\n}",
+        "jsonBody": "={\n  \"content\": {{ JSON.stringify($json.rfpText) }}\n}",
         "options": {
           "timeout": 120000,
           "response": {
@@ -117,7 +136,10 @@
       "name": "Sellora – POST /ai/extractions/rfp",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1100, 300],
+      "position": [
+        1100,
+        300
+      ],
       "credentials": {
         "httpHeaderAuth": {
           "id": "sellora_api_key_cred",
@@ -153,28 +175,37 @@
       "name": "Check API Response",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [1320, 300]
+      "position": [
+        1320,
+        300
+      ]
     },
     {
       "parameters": {
-        "jsCode": "// Parse and reshape the Sellora RFP API response into rows for Excel.\n// Response shape (from your backend docs):\n// {\n//   success: true,\n//   data: {\n//     extractedQuestions: [...],\n//     answers: [\n//       {\n//         question: string,\n//         rewrittenQuestion: string,\n//         answer: string,\n//         confidence: 'HIGH' | 'MEDIUM' | 'LOW',\n//         refused: boolean,\n//         citations: [{ chunkId, documentId, score, text, sectionTitle }]\n//       }\n//     ],\n//     aiInteractionId: string,\n//     totalQuestions: number,\n//     answeredCount: number,\n//     refusedCount: number\n//   }\n// }\n\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const data = item.json.data || item.json;\n  const answers = data.answers || [];\n\n  if (answers.length === 0) {\n    throw new Error('Sellora returned zero answers. Check the rfpText was not empty.');\n  }\n\n  const rows = answers.map((ans, idx) => ({\n    rowNumber: idx + 1,\n    originalQuestion: ans.question || '',\n    rewrittenQuestion: ans.rewrittenQuestion || ans.question || '',\n    answer: ans.refused\n      ? 'INSUFFICIENT CONTEXT — Manual review required'\n      : (ans.answer || ''),\n    confidence: ans.refused ? 'N/A' : (ans.confidence || 'LOW'),\n    requiresReview: ans.refused ? 'YES' : 'NO',\n    topCitationSection: ans.citations?.[0]?.sectionTitle || '',\n    topCitationScore: ans.citations?.[0]?.score\n      ? (ans.citations[0].score * 100).toFixed(1) + '%'\n      : '',\n    citationCount: (ans.citations || []).length,\n  }));\n\n  results.push({\n    json: {\n      rows,\n      summary: {\n        totalQuestions: data.totalQuestions || answers.length,\n        answeredCount: data.answeredCount || answers.filter(a => !a.refused).length,\n        refusedCount: data.refusedCount || answers.filter(a => a.refused).length,\n        aiInteractionId: data.aiInteractionId || '',\n      },\n      // Pass through for email node\n      sourceFileName: $('Clean & Validate Text').first().json.fileName,\n      fileId: $('Clean & Validate Text').first().json.fileId,\n    }\n  });\n}\n\nreturn results;"
+        "jsCode": "const items = $input.all();\nreturn items.map(item => {\n  const data = item.json.data;\n  if (item.json.success !== true || data?.version !== 1 || !Array.isArray(data.results) || data.results.length === 0) {\n    throw new Error('Unexpected Sellora RFP response contract');\n  }\n  const rows = data.results.map((row, index) => {\n    if (row.index !== index || typeof row.rowId !== 'string' || typeof row.question !== 'string' || !['success', 'refusal', 'error'].includes(row.status)) {\n      throw new Error('Invalid Sellora RFP row contract');\n    }\n    return {\n      rowId: row.rowId,\n      rowNumber: index + 1,\n      originalQuestion: row.question,\n      status: row.status,\n      answer: row.status === 'success' ? row.answer : '',\n      confidence: row.status === 'success' ? row.confidence : '',\n      requiresReview: 'YES',\n      errorCode: row.errorCode || '',\n      topCitationSection: row.citations?.[0]?.sectionTitle || '',\n      citationCount: row.citations?.length || 0,\n    };\n  });\n  return { json: {\n    rows,\n    summary: {\n      totalQuestions: rows.length,\n      answeredCount: rows.filter(row => row.status === 'success').length,\n      refusedCount: rows.filter(row => row.status === 'refusal').length,\n      errorCount: rows.filter(row => row.status === 'error').length,\n      aiInteractionId: data.extractionAiInteractionId || '',\n    },\n    sourceFileName: $('Clean & Validate Text').first().json.fileName,\n    fileId: $('Clean & Validate Text').first().json.fileId,\n  } };\n});"
       },
       "id": "node_parse_answers",
       "name": "Parse & Shape Answers",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1540, 180],
+      "position": [
+        1540,
+        180
+      ],
       "notes": "Reshapes the Sellora response into flat rows suitable for writing to a spreadsheet."
     },
     {
       "parameters": {
-        "jsCode": "// Convert answer rows into a proper spreadsheet binary.\n// n8n's 'Convert to File' node or SpreadsheetFile node writes XLSX.\n\nconst item = $input.first().json;\nconst rows = item.rows || [];\nconst summary = item.summary || {};\n\n// Build CSV-style data for the Convert to File node.\n// We'll pass it as structured JSON; the next node writes it as XLSX.\n\nconst headers = [\n  '#',\n  'Original Question',\n  'Refined Question (AI)',\n  'Answer',\n  'Confidence',\n  'Requires Manual Review?',\n  'Source Section',\n  'Match Score',\n  'Citations Used',\n];\n\nconst dataRows = rows.map(r => ([\n  r.rowNumber,\n  r.originalQuestion,\n  r.rewrittenQuestion,\n  r.answer,\n  r.confidence,\n  r.requiresReview,\n  r.topCitationSection,\n  r.topCitationScore,\n  r.citationCount,\n]));\n\n// Summary rows at the bottom\nconst summaryRows = [\n  [],\n  ['SUMMARY', '', '', '', '', '', '', '', ''],\n  ['Total Questions', summary.totalQuestions, '', '', '', '', '', '', ''],\n  ['Answered', summary.answeredCount, '', '', '', '', '', '', ''],\n  ['Needs Review', summary.refusedCount, '', '', '', '', '', '', ''],\n  ['AI Interaction ID', summary.aiInteractionId, '', '', '', '', '', '', ''],\n  ['Generated by', 'Sellora AI Backend', '', '', '', '', '', '', ''],\n  ['Timestamp', new Date().toISOString(), '', '', '', '', '', '', ''],\n];\n\nreturn [{\n  json: {\n    headers,\n    dataRows,\n    summaryRows,\n    allRows: [headers, ...dataRows, ...summaryRows],\n    // Metadata for email\n    sourceFileName: item.sourceFileName,\n    summary,\n  }\n}];"
+        "jsCode": "const item = $input.first().json;\nconst headers = ['#', 'Row ID', 'Original Question', 'Status', 'Answer', 'Confidence', 'Requires Manual Review?', 'Error Code', 'Source Section', 'Citations Used'];\nconst dataRows = item.rows.map(row => [row.rowNumber, row.rowId, row.originalQuestion, row.status, row.answer, row.confidence, row.requiresReview, row.errorCode, row.topCitationSection, row.citationCount]);\nreturn [{ json: {\n  headers,\n  dataRows,\n  allRows: [headers, ...dataRows],\n  sourceFileName: item.sourceFileName,\n  summary: item.summary,\n} }];"
       },
       "id": "node_build_spreadsheet_data",
       "name": "Build Spreadsheet Data",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1760, 180]
+      "position": [
+        1760,
+        180
+      ]
     },
     {
       "parameters": {
@@ -190,7 +221,10 @@
       "name": "Convert to Excel File",
       "type": "n8n-nodes-base.spreadsheetFile",
       "typeVersion": 2,
-      "position": [1980, 180],
+      "position": [
+        1980,
+        180
+      ],
       "notes": "Writes the answer rows to an XLSX binary. Output is stored in binary property 'rfp_answers'."
     },
     {
@@ -199,7 +233,7 @@
         "toEmail": "={{ $vars.ENGINEER_EMAIL }}",
         "subject": "=✅ RFP Answers Ready – {{ $('Clean & Validate Text').first().json.fileName }}",
         "emailType": "html",
-        "message": "=<h2>RFP Processing Complete</h2>\n\n<p>Sellora has finished processing the RFP document:</p>\n<ul>\n  <li><strong>File:</strong> {{ $('Clean & Validate Text').first().json.fileName }}</li>\n  <li><strong>Total Questions:</strong> {{ $('Parse & Shape Answers').first().json.summary.totalQuestions }}</li>\n  <li><strong>Auto-Answered:</strong> {{ $('Parse & Shape Answers').first().json.summary.answeredCount }}</li>\n  <li><strong>Needs Manual Review:</strong> {{ $('Parse & Shape Answers').first().json.summary.refusedCount }}</li>\n</ul>\n\n<p>The completed spreadsheet is attached. Questions marked <strong>\"YES\"</strong> in the <em>Requires Manual Review</em> column had insufficient context in our document library and need a human answer.</p>\n\n<p style=\"color: #666; font-size: 12px;\">Powered by Sellora AI · AI Interaction ID: {{ $('Parse & Shape Answers').first().json.summary.aiInteractionId }}</p>",
+        "message": "=<h2>RFP Processing Complete</h2>\n\n<p>Sellora has finished processing the RFP document:</p>\n<ul>\n  <li><strong>File:</strong> {{ $('Clean & Validate Text').first().json.fileName }}</li>\n  <li><strong>Total Questions:</strong> {{ $('Parse & Shape Answers').first().json.summary.totalQuestions }}</li>\n  <li><strong>Auto-Answered:</strong> {{ $('Parse & Shape Answers').first().json.summary.answeredCount }}</li>\n  <li><strong>Needs Manual Review:</strong> {{ $('Parse & Shape Answers').first().json.summary.refusedCount }}</li>\n</ul>\n\n<p>The completed spreadsheet is attached. Every row requires staff review. Refusal and error rows need a human answer; success rows need source and wording approval.</p>\n\n<p style=\"color: #666; font-size: 12px;\">Powered by Sellora AI · AI Interaction ID: {{ $('Parse & Shape Answers').first().json.summary.aiInteractionId }}</p>",
         "attachments": "rfp_answers",
         "options": {}
       },
@@ -207,7 +241,10 @@
       "name": "Email – Send Answers to Engineer",
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2.1,
-      "position": [2200, 180],
+      "position": [
+        2200,
+        180
+      ],
       "credentials": {
         "gmailOAuth2": {
           "id": "gmail_cred",
@@ -229,7 +266,10 @@
       "name": "Email – Alert on Failure",
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2.1,
-      "position": [1540, 420],
+      "position": [
+        1540,
+        420
+      ],
       "credentials": {
         "gmailOAuth2": {
           "id": "gmail_cred",
@@ -259,7 +299,10 @@
       "name": "Google Drive – Save Answers File",
       "type": "n8n-nodes-base.googleDrive",
       "typeVersion": 3,
-      "position": [2200, 360],
+      "position": [
+        2200,
+        360
+      ],
       "credentials": {
         "googleDriveOAuth2Api": {
           "id": "gdrive_cred",
@@ -271,40 +314,126 @@
   ],
   "connections": {
     "Google Drive – Watch RFP Folder": {
-      "main": [[{ "node": "Google Drive – Download PDF", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Google Drive – Download PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Google Drive – Download PDF": {
-      "main": [[{ "node": "Prepare File Metadata", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Prepare File Metadata",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Prepare File Metadata": {
-      "main": [[{ "node": "Extract PDF Text", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Extract PDF Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Extract PDF Text": {
-      "main": [[{ "node": "Clean & Validate Text", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Clean & Validate Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Clean & Validate Text": {
-      "main": [[{ "node": "Sellora – POST /ai/extractions/rfp", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Sellora – POST /ai/extractions/rfp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Sellora – POST /ai/extractions/rfp": {
-      "main": [[{ "node": "Check API Response", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Check API Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Check API Response": {
       "main": [
-        [{ "node": "Parse & Shape Answers", "type": "main", "index": 0 }],
-        [{ "node": "Email – Alert on Failure", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Parse & Shape Answers",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Email – Alert on Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Parse & Shape Answers": {
-      "main": [[{ "node": "Build Spreadsheet Data", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Build Spreadsheet Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Build Spreadsheet Data": {
-      "main": [[{ "node": "Convert to Excel File", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Convert to Excel File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Convert to Excel File": {
-      "main": [[
-        { "node": "Email – Send Answers to Engineer", "type": "main", "index": 0 },
-        { "node": "Google Drive – Save Answers File", "type": "main", "index": 0 }
-      ]]
+      "main": [
+        [
+          {
+            "node": "Email – Send Answers to Engineer",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Google Drive – Save Answers File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
@@ -322,9 +451,15 @@
   "versionId": "1.0.0",
   "triggerCount": 1,
   "tags": [
-    { "name": "sellora" },
-    { "name": "rfp" },
-    { "name": "ai" }
+    {
+      "name": "sellora"
+    },
+    {
+      "name": "rfp"
+    },
+    {
+      "name": "ai"
+    }
   ],
   "_readme": {
     "title": "Sellora – RFP Processing Pipeline",
@@ -349,5 +484,6 @@
       "5. Set the 5 n8n Variables in Settings → Variables",
       "6. Activate the workflow"
     ]
-  }
+  },
+  "active": false
 }

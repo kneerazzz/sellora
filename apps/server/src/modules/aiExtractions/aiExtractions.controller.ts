@@ -3,7 +3,7 @@ import { ApiResponse } from '../../utils/apiResponse'
 import { asyncHandler } from '../../utils/asyncHandler'
 import { aiExtractionsService } from './aiExtractions.service'
 import type { SalesExtractionInput } from './aiExtractions.schema'
-import type { RfpExtractionInput } from './rfpExtraction.schema'
+import type { RfpRequestInput } from './rfpExtraction.schema'
 import { withClientDisconnectSignal } from '../../services/provider/httpCancellation'
 import { randomUUID } from 'node:crypto'
 
@@ -32,7 +32,7 @@ const extractAndAnswerRfp = asyncHandler(async (req: Request, res: Response) => 
 
   const result = await withClientDisconnectSignal(res, signal =>
     aiExtractionsService.extractAndAnswerRfp(
-      req.body as RfpExtractionInput,
+      req.body as RfpRequestInput,
       {
         organizationId: orgId,
         userId: req.user?.id,

@@ -8,8 +8,10 @@ import {
 } from './aiExtractions.schema'
 import {
   rfpExtractionBodySchema,
-  type RfpExtractionInput,
+  rfpAnswerRowsBodySchema,
+  type RfpRequestInput,
 } from './rfpExtraction.schema'
+import { answerRfpRows } from './rfpRows'
 import { groundedAnswersService } from '../groundedAnswers/groundedAnswers.service'
 import { withWorkloadReservation } from '../usage/workloadReservations.service'
 
@@ -81,7 +83,7 @@ async function extractSalesEvent(
 }
 
 async function extractAndAnswerRfp(
-  input: RfpExtractionInput,
+  input: RfpRequestInput,
   context: {
     organizationId: string
     userId?: string
@@ -90,67 +92,68 @@ async function extractAndAnswerRfp(
     workflowRunId?: string
   }
 ) {
-  const validatedInput = rfpExtractionBodySchema.parse(input)
+  const answerRows = rfpAnswerRowsBodySchema.safeParse(input)
+  let extractionAiInteractionId: string | null = null
+  let rows: { rowId: string; question: string }[]
+  let documentIds: string[] | undefined
 
-  const result = await withWorkloadReservation({
-    organizationId: context.organizationId,
-    operation: 'rfp_extraction',
-    units: Math.max(1, validatedInput.content.length),
-    requestId: context.requestId,
-    workflowRunId: context.workflowRunId,
-    work: async ({ markAttempted, usageTraceId }) => {
-      markAttempted()
-      return callLlmForRfpExtraction(validatedInput, { signal: context.signal, usage: { traceId: usageTraceId } })
-    },
-  })
+  if (answerRows.success) {
+    rows = answerRows.data.rows
+    documentIds = answerRows.data.documentIds
+  } else {
+    const validatedInput = rfpExtractionBodySchema.parse(input)
+    documentIds = validatedInput.documentIds
 
-  const aiInteraction = await prisma.aiInteraction.create({
-    data: {
-      type: 'CHAT_MESSAGE',
-      model: result.model,
-      promptTokens: result.usage.promptTokens,
-      completionTokens: result.usage.completionTokens,
-      totalTokens: result.usage.totalTokens,
-      latencyMs: result.latencyMs,
-      isStreamed: false,
-      systemPrompt: rfpExtractionSystemPrompt,
-      userPrompt: input.content,
-      response: JSON.stringify(result.output),
-      retrievedChunkIds: [],
-      queryVector: [],
-      userId: context.userId,
+    const result = await withWorkloadReservation({
       organizationId: context.organizationId,
-    },
-  })
+      operation: 'rfp_extraction',
+      units: Math.max(1, validatedInput.content.length),
+      requestId: context.requestId,
+      workflowRunId: context.workflowRunId,
+      work: async ({ markAttempted, usageTraceId }) => {
+        markAttempted()
+        return callLlmForRfpExtraction(validatedInput, { signal: context.signal, usage: { traceId: usageTraceId } })
+      },
+    })
 
-  const answers = []
-  for (const question of result.output.questions) {
-    try {
-      const answerResult = await groundedAnswersService.answerQuestion(
-        { question, documentIds: validatedInput.documentIds },
-        {
-          organizationId: context.organizationId,
-          userId: context.userId,
-          signal: context.signal,
-          requestId: context.requestId,
-          workflowRunId: context.workflowRunId,
-        }
-      )
-      answers.push({
-        question,
-        answer: answerResult.answer,
-        refused: answerResult.refused,
-        confidence: answerResult.confidence,
-        citations: answerResult.citations,
-      })
-    } catch (err) {
-      console.error(`Failed to answer RFP question: ${question}`, err)
-    }
+    const aiInteraction = await prisma.aiInteraction.create({
+      data: {
+        type: 'CHAT_MESSAGE',
+        model: result.model,
+        promptTokens: result.usage.promptTokens,
+        completionTokens: result.usage.completionTokens,
+        totalTokens: result.usage.totalTokens,
+        latencyMs: result.latencyMs,
+        isStreamed: false,
+        systemPrompt: rfpExtractionSystemPrompt,
+        userPrompt: validatedInput.content,
+        response: JSON.stringify(result.output),
+        retrievedChunkIds: [],
+        queryVector: [],
+        userId: context.userId,
+        organizationId: context.organizationId,
+      },
+    })
+    extractionAiInteractionId = aiInteraction.id
+    rows = result.output.questions.map((question, index) => ({ rowId: `extracted-${index + 1}`, question }))
   }
 
+  const results = await answerRfpRows(rows, question =>
+    groundedAnswersService.answerQuestion(
+      { question, documentIds },
+      {
+        organizationId: context.organizationId,
+        userId: context.userId,
+        signal: context.signal,
+        requestId: context.requestId,
+        workflowRunId: context.workflowRunId,
+      }
+    ), context.signal)
+
   return {
-    extractionAiInteractionId: aiInteraction.id,
-    results: answers,
+    version: 1,
+    extractionAiInteractionId,
+    results,
   }
 }
 
