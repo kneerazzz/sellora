@@ -3,7 +3,7 @@ import { authenticateApiKey } from '../../middleware/auth.middleware'
 import { apiKeyRateLimit } from '../../middleware/apiKeyRateLimit.middleware'
 import { validate } from '../../middleware/validate.middleware'
 import { webhooksController } from './webhooks.controller'
-import { webhookEventBodySchema } from './webhooks.schema'
+import { gmailReceivedSchema, webhookEventBodySchema } from './webhooks.schema'
 
 export const webhooksRouter = Router()
 
@@ -15,6 +15,8 @@ webhooksRouter.post(
   validate(webhookEventBodySchema),
   webhooksController.emailReceived
 )
+
+webhooksRouter.post('/gmail-received', validate(gmailReceivedSchema), webhooksController.gmailReceived)
 
 webhooksRouter.post(
   '/call-transcript',

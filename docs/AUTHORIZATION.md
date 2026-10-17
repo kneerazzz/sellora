@@ -94,6 +94,7 @@ route; do not infer new read permissions from its name.
 | POST /workflow-runs/:id/cancel | Y | Y | Y | — | — | — |
 | POST /crm-writeback/preview | Y | Y | Y | — | Y | Y |
 | POST /webhooks/email-received | — | — | — | — | Y | Y |
+| POST /webhooks/gmail-received | — | — | — | — | Y | Y |
 | POST /webhooks/call-transcript | — | — | — | — | Y | Y |
 | POST /webhooks/crm-event | — | — | — | — | Y | Y |
 | POST /webhooks/manual-question | — | — | — | — | Y | Y |
@@ -188,3 +189,10 @@ ADMIN/MANAGER-only. Foreign entry IDs return 404 for permitted roles. The full
 20-migration disposable suite and cleanup passed with deterministic providers.
 No approved-answer UI, browser journey, live provider or client acceptance was
 tested.
+
+Packet 11B extended the matrix on October 17, 2026 to 70 protected routes and
+648 HTTP assertions. The selected Gmail intake route permits organization-scoped
+WEBHOOK_ONLY/FULL_ACCESS keys and denies JWT staff and READ_ONLY keys. Its
+dedicated disposable fixture verifies strict versioned input, body organization
+override denial, stable message-ID replay behavior and one queued run. No live
+Gmail or n8n account was connected.

@@ -46,3 +46,20 @@ export const webhookEventBodySchema = z.object({
 
 export type WebhookEventInput = z.infer<typeof webhookEventBodySchema>['body']
 export type WebhookEventQuery = z.infer<typeof webhookEventBodySchema>['query']
+
+export const gmailReceivedSchema = z.object({
+  query: z.object({}).strict(),
+  body: z.object({
+    version: z.literal(1),
+    messageId: z.string().regex(/^[A-Za-z0-9_-]{8,200}$/),
+    threadId: z.string().regex(/^[A-Za-z0-9_-]{8,200}$/),
+    from: z.string().trim().email().max(320),
+    to: z.string().trim().email().max(320),
+    subject: z.string().trim().min(1).max(500),
+    text: z.string().trim().min(1).max(16000),
+    messageDate: z.string().datetime(),
+    sizeEstimate: z.number().int().min(1).max(131072),
+  }).strict(),
+})
+
+export type GmailReceivedInput = z.infer<typeof gmailReceivedSchema>['body']

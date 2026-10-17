@@ -339,6 +339,10 @@ try {
     { method: 'POST', route: '/crm-writeback/preview', allow: mixed, api: true, status: 201, body: { workflowRunId: ownRun.id, provider: 'HUBSPOT' } },
     ...['email-received', 'call-transcript', 'manual-question'].map(name => ({ method: 'POST', route: `/webhooks/${name}`,
       allow: ['FULL_ACCESS', 'WEBHOOK_ONLY'], api: true, status: 202, body: { payload: { question: 'the and', documentIds: [] } } })),
+    { method: 'POST', route: '/webhooks/gmail-received', allow: ['FULL_ACCESS', 'WEBHOOK_ONLY'], api: true, status: 202,
+      body: { version: 1, messageId: '18f0a1b2c3d4e5f6', threadId: '18f0a1b2c3d4e5f6', from: 'buyer@example.test',
+        to: 'pilot@example.test', subject: 'Question', text: 'Can you explain the refund window?',
+        messageDate: new Date().toISOString(), sizeEstimate: 1024 } },
   ]
   for (const entry of cases) for (const caller of callers) {
     const allowed = entry.allow.includes(caller.kind), setup = await entry.setup?.(caller)

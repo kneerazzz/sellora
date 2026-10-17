@@ -5,7 +5,7 @@ import { asyncHandler } from '../../utils/asyncHandler'
 import { webhooksService } from './webhooks.service'
 import { workflowRunsService } from '../workflowRuns/workflowRuns.service'
 import { ApiError } from '../../utils/apiError'
-import type { WebhookEventInput, WebhookEventQuery } from './webhooks.schema'
+import type { GmailReceivedInput, WebhookEventInput, WebhookEventQuery } from './webhooks.schema'
 
 const DEFAULT_SYNC_PROCESS_TIMEOUT_MS = 25_000
 
@@ -118,6 +118,20 @@ function createIntakeHandler(eventType: WebhookEventType) {
 
 export const webhooksController = {
   emailReceived: createIntakeHandler('EMAIL_RECEIVED'),
+  gmailReceived: asyncHandler(async (req: Request, res: Response) => {
+    if (req.header('Idempotency-Key') || req.header('X-Idempotency-Key')) {
+      throw ApiError.badRequest('Gmail message ID is the idempotency key')
+    }
+    const message = req.body as GmailReceivedInput
+    const result = await webhooksService.intakeWebhookEvent({
+      input: { source: 'GMAIL', externalObjectType: 'EMAIL', externalObjectId: message.messageId,
+        payload: message },
+      eventType: 'EMAIL_RECEIVED', organizationId: req.apiKey.organizationId, apiKeyId: req.apiKey.id,
+    })
+    res.status(202).json(ApiResponse.ok('Gmail message accepted', {
+      version: 1, ...webhooksService.buildWebhookAcceptedResponse(result),
+    }))
+  }),
   callTranscript: createIntakeHandler('CALL_TRANSCRIPT_RECEIVED'),
   crmEvent: createIntakeHandler('CRM_RECORD_UPDATED'),
   manualQuestion: createIntakeHandler('MANUAL_QUESTION'),
