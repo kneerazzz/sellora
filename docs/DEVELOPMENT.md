@@ -95,6 +95,10 @@ settings into apps started on the host. Secrets below are listed by name only.
 | `WORKFLOW_LEASE_TTL_MS`, `WORKFLOW_MAX_ATTEMPTS`, `WORKFLOW_RETRY_BASE_MS`, `WORKFLOW_RETRY_MAX_MS` | Workflow lease/retry defaults 60000 ms / 3 / 1000 ms / 30000 ms; finite positive integers. Heartbeat renews every third of the TTL; a killed worker is reclaimable after the lease expires. At most 20 attempts. These are engineering settings, not a buyer SLA. |
 | `VITE_API_URL` | Optional dashboard API base, default `/api/v1`; Vite values are public, never secrets |
 
+The same worker also polls persisted questionnaire jobs. Its row input/attempt caps
+and 60-second fenced lease are documented in [the questionnaire contract](QUESTIONNAIRE_CONTRACT.md).
+Run it only against the selected database; these are not pilot allowances.
+
 Extraction's legacy `OPENAI_MODEL`/`GROQ_MODEL` aliases still exist; use the explicit
 `*_EXTRACTION_MODEL` names consistently. Provider keys are optional for compile,
 tests and startup; actual generation requires the selected provider configuration.

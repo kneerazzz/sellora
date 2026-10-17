@@ -49,7 +49,9 @@ try {
   run(process.execPath, ['node_modules/prisma/build/index.js', 'migrate', 'deploy'], env)
   run(process.execPath, ['node_modules/prisma/build/index.js', 'migrate', 'deploy'], env)
   console.log('PASS clean Prisma deployment and repeat deployment')
-  if (process.argv.includes('--gmail-only')) {
+  if (process.argv.includes('--questionnaire-only')) {
+    run(process.execPath, ['--import', 'tsx', 'scripts/integration/questionnaires.ts'], env)
+  } else if (process.argv.includes('--gmail-only')) {
     run(process.execPath, ['--import', 'tsx', 'scripts/integration/gmailIntake.ts'], env)
   } else if (process.argv.includes('--browser-only')) {
     run(process.execPath, ['--import', 'tsx', 'scripts/integration/draftsBrowser.ts'], env)
@@ -72,6 +74,7 @@ try {
     ...env, SELLORA_DISPOSABLE_DATABASE_URL: `${base}/sellora_test_migrations`,
   })
   run(process.execPath, ['--import', 'tsx', 'scripts/integration/gmailIntake.ts'], env)
+  run(process.execPath, ['--import', 'tsx', 'scripts/integration/questionnaires.ts'], env)
   run(process.execPath, ['--import', 'tsx', 'scripts/integration/drafts.ts'], {
     ...env, SELLORA_DISPOSABLE_DATABASE_URL: `${base}/sellora_test_migrations`,
   })

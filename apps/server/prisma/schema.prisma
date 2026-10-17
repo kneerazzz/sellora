@@ -47,6 +47,7 @@ model Organization {
   webhookEvents    WebhookEvent[]
   workflowRuns     WorkflowRun[]
   workflowRunActivities WorkflowRunActivity[]
+  questionnaireJobs QuestionnaireJob[]
   workflows        WorkflowTrigger[]
   workloadReservations WorkloadReservation[]
   usageTraces      UsageTrace[]
@@ -828,6 +829,45 @@ model WorkflowRun {
   @@index([status, leaseExpiresAt])
   @@index([createdAt])
   @@map("workflow_runs")
+}
+
+model QuestionnaireJob {
+  id             String @id @default(cuid())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  organizationId String
+  format         String
+  status         String @default("QUEUED")
+  documentIds    String[]
+  leaseOwner     String?
+  leaseVersion   Int @default(0)
+  leaseExpiresAt DateTime?
+  rows           QuestionnaireRow[]
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@index([status, leaseExpiresAt])
+  @@map("questionnaire_jobs")
+}
+
+model QuestionnaireRow {
+  id           String @id @default(cuid())
+  jobId        String
+  rowIndex     Int
+  rowId        String
+  question     String
+  status       String @default("QUEUED")
+  attemptCount Int @default(0)
+  answer       String?
+  confidence   ConfidenceLevel?
+  citations    Json @default("[]")
+  errorCode    String?
+  updatedAt    DateTime @updatedAt
+  job          QuestionnaireJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, rowIndex])
+  @@index([jobId, status])
+  @@map("questionnaire_rows")
 }
 
 model WorkflowRunActivity {

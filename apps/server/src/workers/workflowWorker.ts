@@ -1,6 +1,7 @@
 import 'dotenv/config'
 import { prisma } from '../config/prisma'
 import { workflowRunsService } from '../modules/workflowRuns/workflowRuns.service'
+import { questionnairesService } from '../modules/questionnaires/questionnaires.service'
 
 function bounded(name: string, fallback: number, maximum: number) {
   const value = Number(process.env[name] ?? fallback)
@@ -34,6 +35,8 @@ async function startWorkflowWorker() {
       try {
         const processed = await workflowRunsService.processQueuedWorkflowRuns({ limit: batchSize, signal: stop.signal })
         if (processed.length) console.log(`Processed ${processed.length} workflow run(s)`)
+        const questionnaire = await questionnairesService.processNext({ signal: stop.signal })
+        if (questionnaire) console.log('Processed one questionnaire job')
       } catch (error) {
         if (!stop.signal.aborted) console.error('Workflow worker poll failed:', error)
       }
