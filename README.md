@@ -1,6 +1,6 @@
 # Sellora — start here
 
-**Current state:** Parts 00/02/03/04/05/07/08/09 and packets 06A–06C complete locally as of **2026-10-16**; 06D queued ingestion deferred after local measurement. 01A scope written, buyer discovery and pilot decisions pending. Part 05/06/07/08/09 Astra review is pending. See [baseline evidence](docs/BASELINE.md), [evidence policy](docs/EVIDENCE_POLICY.md) and [development contract](docs/DEVELOPMENT.md).
+**Current state:** Parts 00/02/03/04/05/07/08/09 and packets 06A–06C complete locally as of **2026-10-16**; 06D queued ingestion deferred after local measurement. 10A/10B staff UI is implemented with web-build and synthetic Firefox evidence, but required disposable API/database browser acceptance remains open. 01A scope written; buyer discovery and pilot decisions pending. Part 05/06/07/08/09 Astra review remains pending. See [baseline evidence](docs/BASELINE.md), [evidence policy](docs/EVIDENCE_POLICY.md) and [development contract](docs/DEVELOPMENT.md).
 The detailed `PROJECT_REPORT.md` and `SELLORA_BUILD_PLAN.md` are local operator records excluded from Git. This README is the repository restart guide.
 
 ## What we are building
@@ -17,7 +17,7 @@ The goal is to try for one paid engagement in roughly two months; the original p
 
 - Committed repairs cover retrieval/refusal, embedding contracts, transactional ingestion, sessions and the staff draft UI. Baseline server checks and frontend production builds passed; see dated evidence below.
 - A forward migration preserves previous vectors and requires explicit re-ingestion; it has not been applied to a client database in this work.
-- The server now persists organization-scoped drafts, exact-revision approvals/exports and an [approved-answer library](docs/APPROVED_ANSWER_CONTRACT.md) with immutable source lineage, paginated search, safe suggestion/reuse, edit/review/archive and a stale review queue. The dashboard still uses session-only edits/checks.
+- The server persists organization-scoped drafts and an [approved-answer library](docs/APPROVED_ANSWER_CONTRACT.md); the staff dashboard now has saved draft/review and library workflows. 10A/10B browser acceptance against a seeded disposable API/database and Astra review remain open.
 - Versioned replacement/deletion and the Knowledge UI now pass local checks; client retention decisions and physical erasure remain open. Integrations, invoice reconciliation and client operations remain incomplete. The public widget remains outside the first offer because its credential/rendering issues are open.
 - CRM remains a payload preview; saved n8n workflows are not verified production integrations.
 
@@ -63,7 +63,7 @@ Part 03 added real authenticated HTTP TXT/Markdown/PDF/DOCX upload/search, dupli
 
 ## Next work
 
-Next action: complete the pending **Part 05/06/07/08/09 Astra review gate**, then **10A — typed API/domain migration**. The local approval safety default reserves approval for ADMIN/MANAGER and denies self-review; the buyer policy remains TBD. A `gpt-6-astra` read-only review accepted the 04C.2 repair on **2026-10-10** with one low-priority break-glass exclusivity regression left as a follow-up. The local operator plan contains bounded task cards and checks.
+Next action: complete 10A/10B browser acceptance against the seeded disposable API/database, then finish the pending **Part 05/06/07/08/09 Astra review gate** before 10C. The local approval safety default reserves approval for ADMIN/MANAGER and denies self-review; buyer policy remains TBD. A `gpt-6-astra` read-only review accepted the 04C.2 repair on **2026-10-10** with one low-priority break-glass exclusivity regression left as a follow-up. The local operator plan contains bounded task cards and checks.
 
 [01A's working offer sheet](docs/FIRST_OFFER.md) is complete; 01B discovery and 01C pilot boundaries await user/buyer evidence. Preserve `apps/server/scripts/bulkIngest.ts`. Update status after each packet; commit only owned work locally after complete parts, without pushing. The October 3 planning expansion changes documentation only; no new application checks or acceptance are claimed.
 

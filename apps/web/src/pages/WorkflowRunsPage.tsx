@@ -148,7 +148,6 @@ export function WorkflowRunsPage() {
               <th className="px-5 py-3 font-medium">Event</th>
               <th className="px-5 py-3 font-medium">Type</th>
               <th className="px-5 py-3 font-medium">Status</th>
-              <th className="px-5 py-3 font-medium">Confidence</th>
               <th className="px-5 py-3 font-medium">Received</th>
               <th className="px-5 py-3 font-medium" />
             </tr>
@@ -156,13 +155,13 @@ export function WorkflowRunsPage() {
           <tbody>
             {loading && runs.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-5 py-10 text-center text-zinc-500">
+                <td colSpan={5} className="px-5 py-10 text-center text-zinc-500">
                   Loading workflow runs…
                 </td>
               </tr>
             ) : runs.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-5 py-10 text-center text-zinc-500">
+                <td colSpan={5} className="px-5 py-10 text-center text-zinc-500">
                   No workflow runs yet. Connect n8n webhooks to see events here.
                 </td>
               </tr>
@@ -189,7 +188,6 @@ export function WorkflowRunsPage() {
                     {run.status === 'RETRY_WAIT' && run.nextAttemptAt &&
                       <p className="mt-1 text-xs text-amber-300">Retry after {formatDate(run.nextAttemptAt)}</p>}
                   </td>
-                  <td className="px-5 py-4 text-zinc-400">{run.confidence ?? '—'}</td>
                   <td className="px-5 py-4 text-zinc-400">
                     {formatDate(run.webhookEvent?.receivedAt ?? run.createdAt)}
                   </td>
