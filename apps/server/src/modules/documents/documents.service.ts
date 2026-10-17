@@ -595,7 +595,7 @@ async function resolveSourceReferences(input: SourceReferencesInput, organizatio
   })
 }
 
-async function inspectDocumentVersion(documentId: string, versionId: string, organizationId: string) {
+async function inspectDocumentVersion(documentId: string, versionId: string, organizationId: string, chunkId?: string) {
   const document = await prisma.document.findFirst({ where: { id: documentId, organizationId },
     select: { activeVersionId: true, deletedAt: true } })
   if (!document) throw ApiError.notFound('Document not found')
@@ -606,12 +606,12 @@ async function inspectDocumentVersion(documentId: string, versionId: string, org
     : document.activeVersionId === versionId && version.status === 'ACTIVE' ? 'CURRENT'
     : version.status === 'RETIRED' ? 'STALE' : 'UNAVAILABLE'
   const chunks = availability === 'CURRENT' ? await prisma.documentChunk.findMany({
-    where: { documentId, versionId }, orderBy: { chunkIndex: 'asc' }, take: 101,
+    where: { documentId, versionId, ...(chunkId && { id: chunkId }) }, orderBy: { chunkIndex: 'asc' }, take: chunkId ? 1 : 101,
     select: { id: true, chunkIndex: true, text: true, pageNumber: true,
       headingPath: true, sectionTitle: true },
   }) : []
   return { versionId, versionNumber: version.versionNumber, availability, chunks: chunks.slice(0, 100),
-    truncated: chunks.length > 100 }
+    truncated: !chunkId && chunks.length > 100 }
 }
 
 async function previewDocumentErasure(documentId: string, organizationId: string) {

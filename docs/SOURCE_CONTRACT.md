@@ -31,4 +31,9 @@ originals for a scoped retry and never enter retrieval. Deletion uses the same
 expected pointer and immediately removes the document from new retrieval while
 retaining historical records under the [07C retention contract](RETENTION.md). Deletion
 cannot be undone by a late candidate publication. Approval/export must
-revalidate source availability in Part 08; there is no durable approval yet.
+revalidate source availability under the Part 08 draft contract.
+
+The staff source-inspection route accepts an optional `chunkId` to return that
+exact passage, including one beyond the default 100-passage preview. It checks
+the document, version, chunk and organization together and returns text only
+while the version is current. Retired or deleted versions return no passage text.

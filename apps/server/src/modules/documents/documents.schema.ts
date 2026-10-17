@@ -85,6 +85,7 @@ export const deleteDocumentSchema = z.object({
 })
 export const documentVersionParamSchema = z.object({
   params: documentIdParamSchema.shape.params.extend({ versionId: z.string().min(1).max(200) }),
+  query: z.object({ chunkId: z.string().min(1).max(200).optional() }),
 })
 export const sourceReferencesSchema = z.object({
   body: z.object({ references: z.array(z.object({

@@ -29,8 +29,8 @@ export async function listDocumentVersions(documentId: string) {
   return data.data
 }
 
-export async function inspectDocumentVersion(documentId: string, versionId: string) {
-  const { data } = await apiClient.get<ApiResponse<SourceInspection>>(`/documents/${documentId}/versions/${versionId}/source`)
+export async function inspectDocumentVersion(documentId: string, versionId: string, chunkId?: string) {
+  const { data } = await apiClient.get<ApiResponse<SourceInspection>>(`/documents/${documentId}/versions/${versionId}/source`, { params: chunkId ? { chunkId } : undefined })
   return data.data
 }
 

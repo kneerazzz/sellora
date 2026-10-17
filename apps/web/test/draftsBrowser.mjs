@@ -38,7 +38,9 @@ const testScript = `<script>
         if (document.querySelector('#draft-reply').value !== 'Updated after review.') throw new Error('Saved revision did not survive reload');
         click('Approved answers library');
         await waitFor(() => [...document.querySelectorAll('#root button')].some(node => node.textContent.trim() === 'Reuse as new draft'));
-        click('Review and approve current revision');
+        click('Inspect current revision');
+        await waitFor(() => [...document.querySelectorAll('#root button')].some(node => node.textContent.trim() === 'Approve inspected revision'));
+        click('Approve inspected revision');
         await waitFor(() => document.querySelector('#root').innerText.includes('Current library revision approved.'));
         click('Reuse as new draft');
         await waitFor(() => document.querySelector('#root').innerText.includes('Started from an approved answer. This draft is unapproved'));

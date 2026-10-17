@@ -113,7 +113,7 @@ const resolveSourceReferences = asyncHandler(async (req: Request, res: Response)
 
 const inspectDocumentVersion = asyncHandler(async (req: Request, res: Response) => {
   const result = await documentsService.inspectDocumentVersion(req.params.id as string,
-    req.params.versionId as string, req.user.organizationId)
+    req.params.versionId as string, req.user.organizationId, req.query.chunkId as string | undefined)
   res.status(200).json(ApiResponse.ok('Document source inspected', result))
 })
 
