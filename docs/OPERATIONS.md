@@ -70,3 +70,30 @@ Operational checks are not client acceptance. A readiness probe should use a
 short caller timeout; a database outage may delay the DB driver's response.
 Provision an external monitor for `/health/worker` and the Slack webhook before
 running unattended. No chat endpoint or paging destination is configured yet.
+
+## Incident runbook — 14D
+
+**Owner:** Sellora operator for the operator-owned pilot; named primary, backup,
+support hours, response window and client escalation contact are TBD in the
+first-client agreement. Until then, no response SLA is promised. Record incident
+ID, start time, affected organization IDs, request/run IDs, severity, last known
+good release, action owner and next update time. Send only metadata through the
+operator Slack channel; use each client's agreed private channel for its own
+impact. Do not send source text, tokens, webhook URLs or another client's IDs.
+For a shared outage, assess each affected organization separately and tell each
+client only its own status. Record resolution time, restored function and any
+unrecovered work; send a closure update and schedule a cause review.
+
+| Symptom / precondition | Operator action | Expected check |
+| --- | --- | --- |
+| Provider outage, timeouts or elevated `PROVIDER_FAILURE` | Check `/api/v1/usage/operations` and provider status/bill using the approved account. ADMIN sets `PUT /api/v1/usage/pause` with `{"paused":true}` for each affected org if retries could consume budget. Stop affected intake/worker claims using the chosen deployment controls. Retry one safe failed run only after provider recovery. | No new costly admission while paused; `GET /api/v1/usage/summary` shows paused state and attempted/unknown usage. Resume with `{"paused":false}` after a bounded smoke run. |
+| Stuck workflow, questionnaire row or ingestion | Get `/api/v1/usage/operations`, then the exact `/api/v1/workflow-runs/:id` or questionnaire/document detail. Check worker heartbeat and lease age, source status and provider errors. Use `POST /api/v1/workflow-runs/:id/retry` or `/:id/cancel`, questionnaire row retry/cancel, or `POST /api/v1/documents/:id/versions/:versionId/retry` only for the matching failed item. | Exact job reaches a terminal or expected queued state; no duplicate external send. If the original upload itself is blocked, stop intake and investigate parser/storage before asking for a new upload. |
+| Worker unhealthy or stale lease | Check `/health/worker`, `/ready`, deployment process logs and DB connectivity; preserve run IDs. Restart one worker of the matching release using the selected host's service control, then check heartbeat and `/api/v1/usage/operations`. | Heartbeat fresh and stale work reclaims under lease fencing; do not start extra workers or process the same item manually while ownership is uncertain. |
+| Budget exhausted / `ALLOWANCE_EXHAUSTED` | Check scoped `/api/v1/usage/summary` and actual provider bill. Keep expensive work paused; record attempted unknown quantities and the denied operation. Ask the authorized client/operator owner to approve a new limit before resuming. | New admission remains denied until a documented limit change; there is no automatic spend increase. |
+| Source replacement/deletion | Inspect `GET /api/v1/documents/:id/versions` and current draft/approved-answer references. Replace with expected active-version ID or tombstone with `DELETE /api/v1/documents/:id` and `{"expectedActiveVersionId":"..."}` only under the document owner's instruction. Inspect affected review queue and reapprove a new exact revision if needed. | Old citations report `STALE` or `UNAVAILABLE`; an old approval/export cannot silently pass as current. See [source contract](SOURCE_CONTRACT.md) and [retention contract](RETENTION.md). |
+| Credential suspected exposed or staff departure | Identify the owning org and integrations. ADMIN revokes the exact key with `DELETE /api/v1/api-keys/:id`; rotate its n8n secret and update only that client's automation. For staff departure, use the [account procedure](ACCOUNT_OPERATIONS.md), which revokes all org keys. Rotate JWT/provider/Slack/OAuth credentials in the chosen secret store, restart affected processes and invalidate grants at their issuer. | Old key/grant fails; new limited credential works on one bounded synthetic event; other orgs remain unaffected. A Slack webhook is an outbound alert destination, not an n8n credential. |
+
+Use the [restore procedure](RESTORE.md) if the database or originals are corrupt.
+Keep the matched backup before a release; do not roll an old binary onto an
+incompatible migrated schema. Use the [offboarding procedure](OFFBOARDING.md)
+for export, access revocation and deletion requests.

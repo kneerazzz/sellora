@@ -54,6 +54,10 @@ try {
   console.log('PASS clean Prisma deployment and repeat deployment')
   if (process.argv.includes('--operations-only')) {
     run(process.execPath, ['--import', 'tsx', 'scripts/integration/startup.ts'], env)
+  } else if (process.argv.includes('--restore-only') || process.argv.includes('--offboarding-only')) {
+    run(process.execPath, ['--import', 'tsx', 'scripts/integration/restore.ts',
+      ...(process.argv.includes('--offboarding-only') ? ['--offboarding'] : [])],
+      { ...env, SELLORA_DISPOSABLE_CONTAINER: name })
   } else if (process.argv.includes('--questionnaire-only')) {
     run(process.execPath, ['--import', 'tsx', 'scripts/integration/questionnaires.ts'], env)
   } else if (process.argv.includes('--performance-only')) {
