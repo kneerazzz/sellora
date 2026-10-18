@@ -10,7 +10,8 @@ let created = false
 
 function run(command, args, env = process.env, capture = false) {
   const result = spawnSync(command, args, {
-    cwd, env, encoding: 'utf8', stdio: capture ? 'pipe' : 'inherit', timeout: 180_000,
+    cwd, env, encoding: 'utf8', stdio: capture ? 'pipe' : 'inherit',
+    timeout: args.includes('scripts/bench/retrieval.ts') ? 600_000 : 180_000,
   })
   if (result.error || result.status !== 0) {
     // Do not echo command arguments or inherited environment values.
@@ -51,6 +52,8 @@ try {
   console.log('PASS clean Prisma deployment and repeat deployment')
   if (process.argv.includes('--questionnaire-only')) {
     run(process.execPath, ['--import', 'tsx', 'scripts/integration/questionnaires.ts'], env)
+  } else if (process.argv.includes('--performance-only')) {
+    run(process.execPath, ['--import', 'tsx', 'scripts/bench/retrieval.ts'], env)
   } else if (process.argv.includes('--gmail-only')) {
     run(process.execPath, ['--import', 'tsx', 'scripts/integration/gmailIntake.ts'], env)
   } else if (process.argv.includes('--browser-only')) {

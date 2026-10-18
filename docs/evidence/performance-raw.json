@@ -1,0 +1,3103 @@
+{
+  "manifest": {
+    "node": "v22.23.3",
+    "os": "linux 7.2.9-arch1-1",
+    "cpu": "AMD Ryzen 5 7520U with Radeon Graphics",
+    "logicalCpus": 8,
+    "totalMemoryBytes": 15996416000,
+    "host": "890cabe27113",
+    "corpus": "synthetic-refund-v1",
+    "vectorDimensions": 768,
+    "provider": "deterministic-no-network",
+    "samplesPerCase": 4
+  },
+  "cases": [
+    {
+      "name": "small",
+      "characters": 2000,
+      "chunks": 12,
+      "textSha256": "21da0a3e952724f9e51e1da4cf095895dc7f495a949379e27a5a412a26761b83",
+      "parser": [
+        {
+          "ms": 0.05,
+          "rssBytes": 635125760
+        },
+        {
+          "ms": 0.019,
+          "rssBytes": 635256832
+        },
+        {
+          "ms": 0.029,
+          "rssBytes": 635256832
+        },
+        {
+          "ms": 0.021,
+          "rssBytes": 635387904
+        }
+      ],
+      "chunker": [
+        {
+          "ms": 6.121,
+          "rssBytes": 635256832,
+          "chunks": 1
+        },
+        {
+          "ms": 3.018,
+          "rssBytes": 635256832,
+          "chunks": 1
+        },
+        {
+          "ms": 2.831,
+          "rssBytes": 635387904,
+          "chunks": 1
+        },
+        {
+          "ms": 1.838,
+          "rssBytes": 635387904,
+          "chunks": 1
+        }
+      ],
+      "answerPhases": [
+        {
+          "embeddingStubMs": 0.01,
+          "retrievalMs": 3.246,
+          "rerankerStubMs": 0.023,
+          "generationStubMs": 0.014,
+          "totalMs": 105.565,
+          "rssBytes": 712298496,
+          "citationCount": 1
+        },
+        {
+          "embeddingStubMs": 0.007,
+          "retrievalMs": 4.219,
+          "rerankerStubMs": 0.008,
+          "generationStubMs": 0.008,
+          "totalMs": 33.195,
+          "rssBytes": 714657792,
+          "citationCount": 1
+        },
+        {
+          "embeddingStubMs": 0.003,
+          "retrievalMs": 5.379,
+          "rerankerStubMs": 0.008,
+          "generationStubMs": 0.004,
+          "totalMs": 26.346,
+          "rssBytes": 716754944,
+          "citationCount": 1
+        },
+        {
+          "embeddingStubMs": 0.003,
+          "retrievalMs": 3.961,
+          "rerankerStubMs": 0.01,
+          "generationStubMs": 0.005,
+          "totalMs": 33.09,
+          "rssBytes": 726585344,
+          "citationCount": 1
+        }
+      ],
+      "insert": {
+        "ms": 5.181,
+        "queryCount": 1
+      },
+      "search": {
+        "runs": [
+          {
+            "ms": 130.643,
+            "rssBytes": 691130368,
+            "returned": 12
+          },
+          {
+            "ms": 3.801,
+            "rssBytes": 691130368,
+            "returned": 12
+          },
+          {
+            "ms": 3.333,
+            "rssBytes": 692703232,
+            "returned": 12
+          },
+          {
+            "ms": 2.982,
+            "rssBytes": 694407168,
+            "returned": 12
+          }
+        ],
+        "queryCountPerRun": 1
+      },
+      "plans": {
+        "baseline": [
+          {
+            "executionMs": 0.567,
+            "sharedHitBlocks": 46,
+            "sharedReadBlocks": 0,
+            "nodes": [
+              {
+                "type": "Limit",
+                "rows": 12
+              },
+              {
+                "type": "Sort",
+                "rows": 12
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 12,
+                "filter": "((s.id IS NOT NULL) OR (k.id IS NOT NULL))"
+              },
+              {
+                "type": "Hash Join",
+                "rows": 12
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 12
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 1
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 12
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 1
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_chunks",
+                "rows": 12
+              },
+              {
+                "type": "Hash",
+                "rows": 12
+              },
+              {
+                "type": "Subquery Scan",
+                "rows": 12
+              },
+              {
+                "type": "Limit",
+                "rows": 12
+              },
+              {
+                "type": "WindowAgg",
+                "rows": 12
+              },
+              {
+                "type": "Sort",
+                "rows": 12
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 12
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 1
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 1,
+                "filter": "((\"deletedAt\" IS NULL) AND (id = 'bench-small'::text) AND (\"organizationId\" = 'bench-small'::text))"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 1,
+                "filter": "(status = 'ACTIVE'::\"DocumentVersionStatus\")"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_chunks",
+                "rows": 12,
+                "filter": "((embedding IS NOT NULL) AND (\"documentId\" = 'bench-small'::text))"
+              },
+              {
+                "type": "Materialize",
+                "rows": 1
+              },
+              {
+                "type": "Subquery Scan",
+                "rows": 1
+              },
+              {
+                "type": "Limit",
+                "rows": 1
+              },
+              {
+                "type": "WindowAgg",
+                "rows": 1
+              },
+              {
+                "type": "Sort",
+                "rows": 1
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 1
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 1
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_chunks",
+                "rows": 1,
+                "filter": "((\"documentId\" = 'bench-small'::text) AND (to_tsvector('english'::regconfig, text) @@ '''refund'' & ''polici'''::tsquery))"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 1,
+                "filter": "((\"deletedAt\" IS NULL) AND (id = 'bench-small'::text) AND (\"organizationId\" = 'bench-small'::text))"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 1,
+                "filter": "(status = 'ACTIVE'::\"DocumentVersionStatus\")"
+              }
+            ]
+          },
+          {
+            "executionMs": 0.311,
+            "sharedHitBlocks": 33,
+            "sharedReadBlocks": 0,
+            "nodes": [
+              {
+                "type": "Limit",
+                "rows": 12
+              },
+              {
+                "type": "Sort",
+                "rows": 12
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 12,
+                "filter": "((s.id IS NOT NULL) OR (k.id IS NOT NULL))"
+              },
+              {
+                "type": "Hash Join",
+                "rows": 12
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 12
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 1
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 12
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 1
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_chunks",
+                "rows": 12
+              },
+              {
+                "type": "Hash",
+                "rows": 12
+              },
+              {
+                "type": "Subquery Scan",
+                "rows": 12
+              },
+              {
+                "type": "Limit",
+                "rows": 12
+              },
+              {
+                "type": "WindowAgg",
+                "rows": 12
+              },
+              {
+                "type": "Sort",
+                "rows": 12
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 12
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 1
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 1,
+                "filter": "((\"deletedAt\" IS NULL) AND (id = 'bench-small'::text) AND (\"organizationId\" = 'bench-small'::text))"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 1,
+                "filter": "(status = 'ACTIVE'::\"DocumentVersionStatus\")"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_chunks",
+                "rows": 12,
+                "filter": "((embedding IS NOT NULL) AND (\"documentId\" = 'bench-small'::text))"
+              },
+              {
+                "type": "Materialize",
+                "rows": 1
+              },
+              {
+                "type": "Subquery Scan",
+                "rows": 1
+              },
+              {
+                "type": "Limit",
+                "rows": 1
+              },
+              {
+                "type": "WindowAgg",
+                "rows": 1
+              },
+              {
+                "type": "Sort",
+                "rows": 1
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 1
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 1
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_chunks",
+                "rows": 1,
+                "filter": "((\"documentId\" = 'bench-small'::text) AND (to_tsvector('english'::regconfig, text) @@ '''refund'' & ''polici'''::tsquery))"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 1,
+                "filter": "((\"deletedAt\" IS NULL) AND (id = 'bench-small'::text) AND (\"organizationId\" = 'bench-small'::text))"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 1,
+                "filter": "(status = 'ACTIVE'::\"DocumentVersionStatus\")"
+              }
+            ]
+          },
+          {
+            "executionMs": 0.575,
+            "sharedHitBlocks": 33,
+            "sharedReadBlocks": 0,
+            "nodes": [
+              {
+                "type": "Limit",
+                "rows": 12
+              },
+              {
+                "type": "Sort",
+                "rows": 12
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 12,
+                "filter": "((s.id IS NOT NULL) OR (k.id IS NOT NULL))"
+              },
+              {
+                "type": "Hash Join",
+                "rows": 12
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 12
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 1
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 12
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 1
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_chunks",
+                "rows": 12
+              },
+              {
+                "type": "Hash",
+                "rows": 12
+              },
+              {
+                "type": "Subquery Scan",
+                "rows": 12
+              },
+              {
+                "type": "Limit",
+                "rows": 12
+              },
+              {
+                "type": "WindowAgg",
+                "rows": 12
+              },
+              {
+                "type": "Sort",
+                "rows": 12
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 12
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 1
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 1,
+                "filter": "((\"deletedAt\" IS NULL) AND (id = 'bench-small'::text) AND (\"organizationId\" = 'bench-small'::text))"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 1,
+                "filter": "(status = 'ACTIVE'::\"DocumentVersionStatus\")"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_chunks",
+                "rows": 12,
+                "filter": "((embedding IS NOT NULL) AND (\"documentId\" = 'bench-small'::text))"
+              },
+              {
+                "type": "Materialize",
+                "rows": 1
+              },
+              {
+                "type": "Subquery Scan",
+                "rows": 1
+              },
+              {
+                "type": "Limit",
+                "rows": 1
+              },
+              {
+                "type": "WindowAgg",
+                "rows": 1
+              },
+              {
+                "type": "Sort",
+                "rows": 1
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 1
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 1
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_chunks",
+                "rows": 1,
+                "filter": "((\"documentId\" = 'bench-small'::text) AND (to_tsvector('english'::regconfig, text) @@ '''refund'' & ''polici'''::tsquery))"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 1,
+                "filter": "((\"deletedAt\" IS NULL) AND (id = 'bench-small'::text) AND (\"organizationId\" = 'bench-small'::text))"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 1,
+                "filter": "(status = 'ACTIVE'::\"DocumentVersionStatus\")"
+              }
+            ]
+          }
+        ],
+        "candidateGin": [
+          {
+            "executionMs": 0.343,
+            "sharedHitBlocks": 33,
+            "sharedReadBlocks": 0,
+            "nodes": [
+              {
+                "type": "Limit",
+                "rows": 12
+              },
+              {
+                "type": "Sort",
+                "rows": 12
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 12,
+                "filter": "((s.id IS NOT NULL) OR (k.id IS NOT NULL))"
+              },
+              {
+                "type": "Hash Join",
+                "rows": 12
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 12
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 1
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 12
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 1
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_chunks",
+                "rows": 12
+              },
+              {
+                "type": "Hash",
+                "rows": 12
+              },
+              {
+                "type": "Subquery Scan",
+                "rows": 12
+              },
+              {
+                "type": "Limit",
+                "rows": 12
+              },
+              {
+                "type": "WindowAgg",
+                "rows": 12
+              },
+              {
+                "type": "Sort",
+                "rows": 12
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 12
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 1
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 1,
+                "filter": "((\"deletedAt\" IS NULL) AND (id = 'bench-small'::text) AND (\"organizationId\" = 'bench-small'::text))"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 1,
+                "filter": "(status = 'ACTIVE'::\"DocumentVersionStatus\")"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_chunks",
+                "rows": 12,
+                "filter": "((embedding IS NOT NULL) AND (\"documentId\" = 'bench-small'::text))"
+              },
+              {
+                "type": "Materialize",
+                "rows": 1
+              },
+              {
+                "type": "Subquery Scan",
+                "rows": 1
+              },
+              {
+                "type": "Limit",
+                "rows": 1
+              },
+              {
+                "type": "WindowAgg",
+                "rows": 1
+              },
+              {
+                "type": "Sort",
+                "rows": 1
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 1
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 1
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_chunks",
+                "rows": 1,
+                "filter": "((\"documentId\" = 'bench-small'::text) AND (to_tsvector('english'::regconfig, text) @@ '''refund'' & ''polici'''::tsquery))"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 1,
+                "filter": "((\"deletedAt\" IS NULL) AND (id = 'bench-small'::text) AND (\"organizationId\" = 'bench-small'::text))"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 1,
+                "filter": "(status = 'ACTIVE'::\"DocumentVersionStatus\")"
+              }
+            ]
+          },
+          {
+            "executionMs": 0.305,
+            "sharedHitBlocks": 33,
+            "sharedReadBlocks": 0,
+            "nodes": [
+              {
+                "type": "Limit",
+                "rows": 12
+              },
+              {
+                "type": "Sort",
+                "rows": 12
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 12,
+                "filter": "((s.id IS NOT NULL) OR (k.id IS NOT NULL))"
+              },
+              {
+                "type": "Hash Join",
+                "rows": 12
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 12
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 1
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 12
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 1
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_chunks",
+                "rows": 12
+              },
+              {
+                "type": "Hash",
+                "rows": 12
+              },
+              {
+                "type": "Subquery Scan",
+                "rows": 12
+              },
+              {
+                "type": "Limit",
+                "rows": 12
+              },
+              {
+                "type": "WindowAgg",
+                "rows": 12
+              },
+              {
+                "type": "Sort",
+                "rows": 12
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 12
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 1
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 1,
+                "filter": "((\"deletedAt\" IS NULL) AND (id = 'bench-small'::text) AND (\"organizationId\" = 'bench-small'::text))"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 1,
+                "filter": "(status = 'ACTIVE'::\"DocumentVersionStatus\")"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_chunks",
+                "rows": 12,
+                "filter": "((embedding IS NOT NULL) AND (\"documentId\" = 'bench-small'::text))"
+              },
+              {
+                "type": "Materialize",
+                "rows": 1
+              },
+              {
+                "type": "Subquery Scan",
+                "rows": 1
+              },
+              {
+                "type": "Limit",
+                "rows": 1
+              },
+              {
+                "type": "WindowAgg",
+                "rows": 1
+              },
+              {
+                "type": "Sort",
+                "rows": 1
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 1
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 1
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_chunks",
+                "rows": 1,
+                "filter": "((\"documentId\" = 'bench-small'::text) AND (to_tsvector('english'::regconfig, text) @@ '''refund'' & ''polici'''::tsquery))"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 1,
+                "filter": "((\"deletedAt\" IS NULL) AND (id = 'bench-small'::text) AND (\"organizationId\" = 'bench-small'::text))"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 1,
+                "filter": "(status = 'ACTIVE'::\"DocumentVersionStatus\")"
+              }
+            ]
+          },
+          {
+            "executionMs": 0.305,
+            "sharedHitBlocks": 33,
+            "sharedReadBlocks": 0,
+            "nodes": [
+              {
+                "type": "Limit",
+                "rows": 12
+              },
+              {
+                "type": "Sort",
+                "rows": 12
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 12,
+                "filter": "((s.id IS NOT NULL) OR (k.id IS NOT NULL))"
+              },
+              {
+                "type": "Hash Join",
+                "rows": 12
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 12
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 1
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 12
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 1
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_chunks",
+                "rows": 12
+              },
+              {
+                "type": "Hash",
+                "rows": 12
+              },
+              {
+                "type": "Subquery Scan",
+                "rows": 12
+              },
+              {
+                "type": "Limit",
+                "rows": 12
+              },
+              {
+                "type": "WindowAgg",
+                "rows": 12
+              },
+              {
+                "type": "Sort",
+                "rows": 12
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 12
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 1
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 1,
+                "filter": "((\"deletedAt\" IS NULL) AND (id = 'bench-small'::text) AND (\"organizationId\" = 'bench-small'::text))"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 1,
+                "filter": "(status = 'ACTIVE'::\"DocumentVersionStatus\")"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_chunks",
+                "rows": 12,
+                "filter": "((embedding IS NOT NULL) AND (\"documentId\" = 'bench-small'::text))"
+              },
+              {
+                "type": "Materialize",
+                "rows": 1
+              },
+              {
+                "type": "Subquery Scan",
+                "rows": 1
+              },
+              {
+                "type": "Limit",
+                "rows": 1
+              },
+              {
+                "type": "WindowAgg",
+                "rows": 1
+              },
+              {
+                "type": "Sort",
+                "rows": 1
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 1
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 1
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_chunks",
+                "rows": 1,
+                "filter": "((\"documentId\" = 'bench-small'::text) AND (to_tsvector('english'::regconfig, text) @@ '''refund'' & ''polici'''::tsquery))"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 1,
+                "filter": "((\"deletedAt\" IS NULL) AND (id = 'bench-small'::text) AND (\"organizationId\" = 'bench-small'::text))"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 1,
+                "filter": "(status = 'ACTIVE'::\"DocumentVersionStatus\")"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "medium",
+      "characters": 100000,
+      "chunks": 160,
+      "textSha256": "5b43ee180618e6c7bc5d4a77355c23ccfeb5caf15240173f929e9944b5b7a3fb",
+      "parser": [
+        {
+          "ms": 0.033,
+          "rssBytes": 728813568
+        },
+        {
+          "ms": 0.12,
+          "rssBytes": 737468416
+        },
+        {
+          "ms": 0.045,
+          "rssBytes": 738693120
+        },
+        {
+          "ms": 0.124,
+          "rssBytes": 739950592
+        }
+      ],
+      "chunker": [
+        {
+          "ms": 3272.812,
+          "rssBytes": 737468416,
+          "chunks": 50
+        },
+        {
+          "ms": 3206.002,
+          "rssBytes": 738693120,
+          "chunks": 50
+        },
+        {
+          "ms": 3209.545,
+          "rssBytes": 739950592,
+          "chunks": 50
+        },
+        {
+          "ms": 3238.35,
+          "rssBytes": 741425152,
+          "chunks": 50
+        }
+      ],
+      "answerPhases": [
+        {
+          "embeddingStubMs": 0.004,
+          "retrievalMs": 5.225,
+          "rerankerStubMs": 0.005,
+          "generationStubMs": 0.002,
+          "totalMs": 34.535,
+          "rssBytes": 741556224,
+          "citationCount": 5
+        },
+        {
+          "embeddingStubMs": 0.004,
+          "retrievalMs": 5.018,
+          "rerankerStubMs": 0.013,
+          "generationStubMs": 0.002,
+          "totalMs": 25.03,
+          "rssBytes": 741556224,
+          "citationCount": 5
+        },
+        {
+          "embeddingStubMs": 0.003,
+          "retrievalMs": 5.531,
+          "rerankerStubMs": 0.014,
+          "generationStubMs": 0.007,
+          "totalMs": 23.657,
+          "rssBytes": 741556224,
+          "citationCount": 5
+        },
+        {
+          "embeddingStubMs": 0.007,
+          "retrievalMs": 6.313,
+          "rerankerStubMs": 0.006,
+          "generationStubMs": 0.003,
+          "totalMs": 22.839,
+          "rssBytes": 741556224,
+          "citationCount": 5
+        }
+      ],
+      "insert": {
+        "ms": 7.018,
+        "queryCount": 1
+      },
+      "search": {
+        "runs": [
+          {
+            "ms": 19.784,
+            "rssBytes": 741425152,
+            "returned": 20
+          },
+          {
+            "ms": 5.48,
+            "rssBytes": 741425152,
+            "returned": 20
+          },
+          {
+            "ms": 6.127,
+            "rssBytes": 741425152,
+            "returned": 20
+          },
+          {
+            "ms": 5.224,
+            "rssBytes": 741425152,
+            "returned": 20
+          }
+        ],
+        "queryCountPerRun": 1
+      },
+      "plans": {
+        "baseline": [
+          {
+            "executionMs": 2.22,
+            "sharedHitBlocks": 339,
+            "sharedReadBlocks": 0,
+            "nodes": [
+              {
+                "type": "Limit",
+                "rows": 20
+              },
+              {
+                "type": "Sort",
+                "rows": 20
+              },
+              {
+                "type": "Hash Join",
+                "rows": 70,
+                "filter": "((s.id IS NOT NULL) OR (k.id IS NOT NULL))"
+              },
+              {
+                "type": "Hash Join",
+                "rows": 172
+              },
+              {
+                "type": "Hash Join",
+                "rows": 172
+              },
+              {
+                "type": "Hash Join",
+                "rows": 172
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_chunks",
+                "rows": 172
+              },
+              {
+                "type": "Hash",
+                "rows": 2
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 2
+              },
+              {
+                "type": "Hash",
+                "rows": 2
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 2
+              },
+              {
+                "type": "Hash",
+                "rows": 60
+              },
+              {
+                "type": "Subquery Scan",
+                "rows": 60
+              },
+              {
+                "type": "Limit",
+                "rows": 60
+              },
+              {
+                "type": "WindowAgg",
+                "rows": 60
+              },
+              {
+                "type": "Sort",
+                "rows": 160
+              },
+              {
+                "type": "Hash Join",
+                "rows": 160
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_chunks",
+                "rows": 160,
+                "filter": "((embedding IS NOT NULL) AND (\"documentId\" = 'bench-medium'::text))"
+              },
+              {
+                "type": "Hash",
+                "rows": 1
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 1
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 1,
+                "filter": "((\"deletedAt\" IS NULL) AND (id = 'bench-medium'::text) AND (\"organizationId\" = 'bench-medium'::text))"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 2,
+                "filter": "(status = 'ACTIVE'::\"DocumentVersionStatus\")"
+              },
+              {
+                "type": "Hash",
+                "rows": 16
+              },
+              {
+                "type": "Subquery Scan",
+                "rows": 16
+              },
+              {
+                "type": "Limit",
+                "rows": 16
+              },
+              {
+                "type": "WindowAgg",
+                "rows": 16
+              },
+              {
+                "type": "Sort",
+                "rows": 16
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 16
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 1
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 1,
+                "filter": "((\"deletedAt\" IS NULL) AND (id = 'bench-medium'::text) AND (\"organizationId\" = 'bench-medium'::text))"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 2,
+                "filter": "(status = 'ACTIVE'::\"DocumentVersionStatus\")"
+              },
+              {
+                "type": "Bitmap Heap Scan",
+                "relation": "document_chunks",
+                "rows": 16,
+                "filter": "((\"documentId\" = 'bench-medium'::text) AND (to_tsvector('english'::regconfig, text) @@ '''refund'' & ''polici'''::tsquery))"
+              },
+              {
+                "type": "Bitmap Index Scan",
+                "index": "document_chunks_versionId_chunkIndex_key",
+                "rows": 160,
+                "indexCondition": "(\"versionId\" = v_2.id)"
+              }
+            ]
+          },
+          {
+            "executionMs": 1.872,
+            "sharedHitBlocks": 339,
+            "sharedReadBlocks": 0,
+            "nodes": [
+              {
+                "type": "Limit",
+                "rows": 20
+              },
+              {
+                "type": "Sort",
+                "rows": 20
+              },
+              {
+                "type": "Hash Join",
+                "rows": 70,
+                "filter": "((s.id IS NOT NULL) OR (k.id IS NOT NULL))"
+              },
+              {
+                "type": "Hash Join",
+                "rows": 172
+              },
+              {
+                "type": "Hash Join",
+                "rows": 172
+              },
+              {
+                "type": "Hash Join",
+                "rows": 172
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_chunks",
+                "rows": 172
+              },
+              {
+                "type": "Hash",
+                "rows": 2
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 2
+              },
+              {
+                "type": "Hash",
+                "rows": 2
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 2
+              },
+              {
+                "type": "Hash",
+                "rows": 60
+              },
+              {
+                "type": "Subquery Scan",
+                "rows": 60
+              },
+              {
+                "type": "Limit",
+                "rows": 60
+              },
+              {
+                "type": "WindowAgg",
+                "rows": 60
+              },
+              {
+                "type": "Sort",
+                "rows": 160
+              },
+              {
+                "type": "Hash Join",
+                "rows": 160
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_chunks",
+                "rows": 160,
+                "filter": "((embedding IS NOT NULL) AND (\"documentId\" = 'bench-medium'::text))"
+              },
+              {
+                "type": "Hash",
+                "rows": 1
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 1
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 1,
+                "filter": "((\"deletedAt\" IS NULL) AND (id = 'bench-medium'::text) AND (\"organizationId\" = 'bench-medium'::text))"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 2,
+                "filter": "(status = 'ACTIVE'::\"DocumentVersionStatus\")"
+              },
+              {
+                "type": "Hash",
+                "rows": 16
+              },
+              {
+                "type": "Subquery Scan",
+                "rows": 16
+              },
+              {
+                "type": "Limit",
+                "rows": 16
+              },
+              {
+                "type": "WindowAgg",
+                "rows": 16
+              },
+              {
+                "type": "Sort",
+                "rows": 16
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 16
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 1
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 1,
+                "filter": "((\"deletedAt\" IS NULL) AND (id = 'bench-medium'::text) AND (\"organizationId\" = 'bench-medium'::text))"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 2,
+                "filter": "(status = 'ACTIVE'::\"DocumentVersionStatus\")"
+              },
+              {
+                "type": "Bitmap Heap Scan",
+                "relation": "document_chunks",
+                "rows": 16,
+                "filter": "((\"documentId\" = 'bench-medium'::text) AND (to_tsvector('english'::regconfig, text) @@ '''refund'' & ''polici'''::tsquery))"
+              },
+              {
+                "type": "Bitmap Index Scan",
+                "index": "document_chunks_versionId_chunkIndex_key",
+                "rows": 160,
+                "indexCondition": "(\"versionId\" = v_2.id)"
+              }
+            ]
+          },
+          {
+            "executionMs": 2.281,
+            "sharedHitBlocks": 339,
+            "sharedReadBlocks": 0,
+            "nodes": [
+              {
+                "type": "Limit",
+                "rows": 20
+              },
+              {
+                "type": "Sort",
+                "rows": 20
+              },
+              {
+                "type": "Hash Join",
+                "rows": 70,
+                "filter": "((s.id IS NOT NULL) OR (k.id IS NOT NULL))"
+              },
+              {
+                "type": "Hash Join",
+                "rows": 172
+              },
+              {
+                "type": "Hash Join",
+                "rows": 172
+              },
+              {
+                "type": "Hash Join",
+                "rows": 172
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_chunks",
+                "rows": 172
+              },
+              {
+                "type": "Hash",
+                "rows": 2
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 2
+              },
+              {
+                "type": "Hash",
+                "rows": 2
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 2
+              },
+              {
+                "type": "Hash",
+                "rows": 60
+              },
+              {
+                "type": "Subquery Scan",
+                "rows": 60
+              },
+              {
+                "type": "Limit",
+                "rows": 60
+              },
+              {
+                "type": "WindowAgg",
+                "rows": 60
+              },
+              {
+                "type": "Sort",
+                "rows": 160
+              },
+              {
+                "type": "Hash Join",
+                "rows": 160
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_chunks",
+                "rows": 160,
+                "filter": "((embedding IS NOT NULL) AND (\"documentId\" = 'bench-medium'::text))"
+              },
+              {
+                "type": "Hash",
+                "rows": 1
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 1
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 1,
+                "filter": "((\"deletedAt\" IS NULL) AND (id = 'bench-medium'::text) AND (\"organizationId\" = 'bench-medium'::text))"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 2,
+                "filter": "(status = 'ACTIVE'::\"DocumentVersionStatus\")"
+              },
+              {
+                "type": "Hash",
+                "rows": 16
+              },
+              {
+                "type": "Subquery Scan",
+                "rows": 16
+              },
+              {
+                "type": "Limit",
+                "rows": 16
+              },
+              {
+                "type": "WindowAgg",
+                "rows": 16
+              },
+              {
+                "type": "Sort",
+                "rows": 16
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 16
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 1
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 1,
+                "filter": "((\"deletedAt\" IS NULL) AND (id = 'bench-medium'::text) AND (\"organizationId\" = 'bench-medium'::text))"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 2,
+                "filter": "(status = 'ACTIVE'::\"DocumentVersionStatus\")"
+              },
+              {
+                "type": "Bitmap Heap Scan",
+                "relation": "document_chunks",
+                "rows": 16,
+                "filter": "((\"documentId\" = 'bench-medium'::text) AND (to_tsvector('english'::regconfig, text) @@ '''refund'' & ''polici'''::tsquery))"
+              },
+              {
+                "type": "Bitmap Index Scan",
+                "index": "document_chunks_versionId_chunkIndex_key",
+                "rows": 160,
+                "indexCondition": "(\"versionId\" = v_2.id)"
+              }
+            ]
+          }
+        ],
+        "candidateGin": [
+          {
+            "executionMs": 1.128,
+            "sharedHitBlocks": 356,
+            "sharedReadBlocks": 0,
+            "nodes": [
+              {
+                "type": "Limit",
+                "rows": 20
+              },
+              {
+                "type": "Sort",
+                "rows": 20
+              },
+              {
+                "type": "Hash Join",
+                "rows": 70,
+                "filter": "((s.id IS NOT NULL) OR (k.id IS NOT NULL))"
+              },
+              {
+                "type": "Hash Join",
+                "rows": 172
+              },
+              {
+                "type": "Hash Join",
+                "rows": 172
+              },
+              {
+                "type": "Hash Join",
+                "rows": 172
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_chunks",
+                "rows": 172
+              },
+              {
+                "type": "Hash",
+                "rows": 2
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 2
+              },
+              {
+                "type": "Hash",
+                "rows": 2
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 2
+              },
+              {
+                "type": "Hash",
+                "rows": 60
+              },
+              {
+                "type": "Subquery Scan",
+                "rows": 60
+              },
+              {
+                "type": "Limit",
+                "rows": 60
+              },
+              {
+                "type": "WindowAgg",
+                "rows": 60
+              },
+              {
+                "type": "Sort",
+                "rows": 160
+              },
+              {
+                "type": "Hash Join",
+                "rows": 160
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_chunks",
+                "rows": 160,
+                "filter": "((embedding IS NOT NULL) AND (\"documentId\" = 'bench-medium'::text))"
+              },
+              {
+                "type": "Hash",
+                "rows": 1
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 1
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 1,
+                "filter": "((\"deletedAt\" IS NULL) AND (id = 'bench-medium'::text) AND (\"organizationId\" = 'bench-medium'::text))"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 2,
+                "filter": "(status = 'ACTIVE'::\"DocumentVersionStatus\")"
+              },
+              {
+                "type": "Hash",
+                "rows": 16
+              },
+              {
+                "type": "Subquery Scan",
+                "rows": 16
+              },
+              {
+                "type": "Limit",
+                "rows": 16
+              },
+              {
+                "type": "WindowAgg",
+                "rows": 16
+              },
+              {
+                "type": "Sort",
+                "rows": 16
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 16
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 16
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 1,
+                "filter": "((\"deletedAt\" IS NULL) AND (id = 'bench-medium'::text) AND (\"organizationId\" = 'bench-medium'::text))"
+              },
+              {
+                "type": "Bitmap Heap Scan",
+                "relation": "document_chunks",
+                "rows": 16,
+                "filter": "(\"documentId\" = 'bench-medium'::text)"
+              },
+              {
+                "type": "Bitmap Index Scan",
+                "index": "document_chunks_text_search_idx",
+                "rows": 17,
+                "indexCondition": "(to_tsvector('english'::regconfig, text) @@ '''refund'' & ''polici'''::tsquery)"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 2,
+                "filter": "(status = 'ACTIVE'::\"DocumentVersionStatus\")"
+              }
+            ]
+          },
+          {
+            "executionMs": 2.397,
+            "sharedHitBlocks": 356,
+            "sharedReadBlocks": 0,
+            "nodes": [
+              {
+                "type": "Limit",
+                "rows": 20
+              },
+              {
+                "type": "Sort",
+                "rows": 20
+              },
+              {
+                "type": "Hash Join",
+                "rows": 70,
+                "filter": "((s.id IS NOT NULL) OR (k.id IS NOT NULL))"
+              },
+              {
+                "type": "Hash Join",
+                "rows": 172
+              },
+              {
+                "type": "Hash Join",
+                "rows": 172
+              },
+              {
+                "type": "Hash Join",
+                "rows": 172
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_chunks",
+                "rows": 172
+              },
+              {
+                "type": "Hash",
+                "rows": 2
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 2
+              },
+              {
+                "type": "Hash",
+                "rows": 2
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 2
+              },
+              {
+                "type": "Hash",
+                "rows": 60
+              },
+              {
+                "type": "Subquery Scan",
+                "rows": 60
+              },
+              {
+                "type": "Limit",
+                "rows": 60
+              },
+              {
+                "type": "WindowAgg",
+                "rows": 60
+              },
+              {
+                "type": "Sort",
+                "rows": 160
+              },
+              {
+                "type": "Hash Join",
+                "rows": 160
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_chunks",
+                "rows": 160,
+                "filter": "((embedding IS NOT NULL) AND (\"documentId\" = 'bench-medium'::text))"
+              },
+              {
+                "type": "Hash",
+                "rows": 1
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 1
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 1,
+                "filter": "((\"deletedAt\" IS NULL) AND (id = 'bench-medium'::text) AND (\"organizationId\" = 'bench-medium'::text))"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 2,
+                "filter": "(status = 'ACTIVE'::\"DocumentVersionStatus\")"
+              },
+              {
+                "type": "Hash",
+                "rows": 16
+              },
+              {
+                "type": "Subquery Scan",
+                "rows": 16
+              },
+              {
+                "type": "Limit",
+                "rows": 16
+              },
+              {
+                "type": "WindowAgg",
+                "rows": 16
+              },
+              {
+                "type": "Sort",
+                "rows": 16
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 16
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 16
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 1,
+                "filter": "((\"deletedAt\" IS NULL) AND (id = 'bench-medium'::text) AND (\"organizationId\" = 'bench-medium'::text))"
+              },
+              {
+                "type": "Bitmap Heap Scan",
+                "relation": "document_chunks",
+                "rows": 16,
+                "filter": "(\"documentId\" = 'bench-medium'::text)"
+              },
+              {
+                "type": "Bitmap Index Scan",
+                "index": "document_chunks_text_search_idx",
+                "rows": 17,
+                "indexCondition": "(to_tsvector('english'::regconfig, text) @@ '''refund'' & ''polici'''::tsquery)"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 2,
+                "filter": "(status = 'ACTIVE'::\"DocumentVersionStatus\")"
+              }
+            ]
+          },
+          {
+            "executionMs": 1.151,
+            "sharedHitBlocks": 356,
+            "sharedReadBlocks": 0,
+            "nodes": [
+              {
+                "type": "Limit",
+                "rows": 20
+              },
+              {
+                "type": "Sort",
+                "rows": 20
+              },
+              {
+                "type": "Hash Join",
+                "rows": 70,
+                "filter": "((s.id IS NOT NULL) OR (k.id IS NOT NULL))"
+              },
+              {
+                "type": "Hash Join",
+                "rows": 172
+              },
+              {
+                "type": "Hash Join",
+                "rows": 172
+              },
+              {
+                "type": "Hash Join",
+                "rows": 172
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_chunks",
+                "rows": 172
+              },
+              {
+                "type": "Hash",
+                "rows": 2
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 2
+              },
+              {
+                "type": "Hash",
+                "rows": 2
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 2
+              },
+              {
+                "type": "Hash",
+                "rows": 60
+              },
+              {
+                "type": "Subquery Scan",
+                "rows": 60
+              },
+              {
+                "type": "Limit",
+                "rows": 60
+              },
+              {
+                "type": "WindowAgg",
+                "rows": 60
+              },
+              {
+                "type": "Sort",
+                "rows": 160
+              },
+              {
+                "type": "Hash Join",
+                "rows": 160
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_chunks",
+                "rows": 160,
+                "filter": "((embedding IS NOT NULL) AND (\"documentId\" = 'bench-medium'::text))"
+              },
+              {
+                "type": "Hash",
+                "rows": 1
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 1
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 1,
+                "filter": "((\"deletedAt\" IS NULL) AND (id = 'bench-medium'::text) AND (\"organizationId\" = 'bench-medium'::text))"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 2,
+                "filter": "(status = 'ACTIVE'::\"DocumentVersionStatus\")"
+              },
+              {
+                "type": "Hash",
+                "rows": 16
+              },
+              {
+                "type": "Subquery Scan",
+                "rows": 16
+              },
+              {
+                "type": "Limit",
+                "rows": 16
+              },
+              {
+                "type": "WindowAgg",
+                "rows": 16
+              },
+              {
+                "type": "Sort",
+                "rows": 16
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 16
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 16
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 1,
+                "filter": "((\"deletedAt\" IS NULL) AND (id = 'bench-medium'::text) AND (\"organizationId\" = 'bench-medium'::text))"
+              },
+              {
+                "type": "Bitmap Heap Scan",
+                "relation": "document_chunks",
+                "rows": 16,
+                "filter": "(\"documentId\" = 'bench-medium'::text)"
+              },
+              {
+                "type": "Bitmap Index Scan",
+                "index": "document_chunks_text_search_idx",
+                "rows": 17,
+                "indexCondition": "(to_tsvector('english'::regconfig, text) @@ '''refund'' & ''polici'''::tsquery)"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 2,
+                "filter": "(status = 'ACTIVE'::\"DocumentVersionStatus\")"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "large",
+      "characters": 250000,
+      "chunks": 1200,
+      "textSha256": "21f290693f518efd40a62270e6fc3cede5b6d3f66d079be5b10449399750c048",
+      "parser": [
+        {
+          "ms": 0.155,
+          "rssBytes": 742080512
+        },
+        {
+          "ms": 0.208,
+          "rssBytes": 673222656
+        },
+        {
+          "ms": 0.222,
+          "rssBytes": 677634048
+        },
+        {
+          "ms": 0.238,
+          "rssBytes": 681668608
+        }
+      ],
+      "chunker": [
+        {
+          "ms": 22485.049,
+          "rssBytes": 672960512,
+          "chunks": 125
+        },
+        {
+          "ms": 22847.483,
+          "rssBytes": 677371904,
+          "chunks": 125
+        },
+        {
+          "ms": 25633.355,
+          "rssBytes": 681406464,
+          "chunks": 125
+        },
+        {
+          "ms": 25711.275,
+          "rssBytes": 685555712,
+          "chunks": 125
+        }
+      ],
+      "answerPhases": [
+        {
+          "embeddingStubMs": 0.004,
+          "retrievalMs": 17.615,
+          "rerankerStubMs": 0.01,
+          "generationStubMs": 0.015,
+          "totalMs": 53.714,
+          "rssBytes": 601329664,
+          "citationCount": 5
+        },
+        {
+          "embeddingStubMs": 0.012,
+          "retrievalMs": 17.492,
+          "rerankerStubMs": 0.118,
+          "generationStubMs": 0.004,
+          "totalMs": 37.226,
+          "rssBytes": 601985024,
+          "citationCount": 5
+        },
+        {
+          "embeddingStubMs": 0.003,
+          "retrievalMs": 17.194,
+          "rerankerStubMs": 0.01,
+          "generationStubMs": 0.002,
+          "totalMs": 39.048,
+          "rssBytes": 601985024,
+          "citationCount": 5
+        },
+        {
+          "embeddingStubMs": 0.003,
+          "retrievalMs": 17.38,
+          "rerankerStubMs": 0.015,
+          "generationStubMs": 0.004,
+          "totalMs": 33.806,
+          "rssBytes": 602116096,
+          "citationCount": 5
+        }
+      ],
+      "insert": {
+        "ms": 79.662,
+        "queryCount": 1
+      },
+      "search": {
+        "runs": [
+          {
+            "ms": 38.248,
+            "rssBytes": 599625728,
+            "returned": 20
+          },
+          {
+            "ms": 18.279,
+            "rssBytes": 599625728,
+            "returned": 20
+          },
+          {
+            "ms": 17.487,
+            "rssBytes": 599625728,
+            "returned": 20
+          },
+          {
+            "ms": 16.795,
+            "rssBytes": 599625728,
+            "returned": 20
+          }
+        ],
+        "queryCountPerRun": 1
+      },
+      "plans": {
+        "baseline": [
+          {
+            "executionMs": 15.845,
+            "sharedHitBlocks": 3715,
+            "sharedReadBlocks": 0,
+            "nodes": [
+              {
+                "type": "Limit",
+                "rows": 20
+              },
+              {
+                "type": "Sort",
+                "rows": 20
+              },
+              {
+                "type": "Hash Join",
+                "rows": 114,
+                "filter": "((s.id IS NOT NULL) OR (k.id IS NOT NULL))"
+              },
+              {
+                "type": "Hash Join",
+                "rows": 1372
+              },
+              {
+                "type": "Hash Join",
+                "rows": 1372
+              },
+              {
+                "type": "Hash Join",
+                "rows": 1372
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_chunks",
+                "rows": 1372
+              },
+              {
+                "type": "Hash",
+                "rows": 3
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 3
+              },
+              {
+                "type": "Hash",
+                "rows": 3
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 3
+              },
+              {
+                "type": "Hash",
+                "rows": 60
+              },
+              {
+                "type": "Subquery Scan",
+                "rows": 60
+              },
+              {
+                "type": "Limit",
+                "rows": 60
+              },
+              {
+                "type": "WindowAgg",
+                "rows": 60
+              },
+              {
+                "type": "Sort",
+                "rows": 1200
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 1200
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 1
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 1,
+                "filter": "((\"deletedAt\" IS NULL) AND (id = 'bench-large'::text) AND (\"organizationId\" = 'bench-large'::text))"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 3,
+                "filter": "(status = 'ACTIVE'::\"DocumentVersionStatus\")"
+              },
+              {
+                "type": "Bitmap Heap Scan",
+                "relation": "document_chunks",
+                "rows": 1200,
+                "filter": "((embedding IS NOT NULL) AND (\"documentId\" = 'bench-large'::text))"
+              },
+              {
+                "type": "Bitmap Index Scan",
+                "index": "document_chunks_versionId_chunkIndex_key",
+                "rows": 1200,
+                "indexCondition": "(\"versionId\" = v_1.id)"
+              },
+              {
+                "type": "Hash",
+                "rows": 60
+              },
+              {
+                "type": "Subquery Scan",
+                "rows": 60
+              },
+              {
+                "type": "Limit",
+                "rows": 60
+              },
+              {
+                "type": "WindowAgg",
+                "rows": 60
+              },
+              {
+                "type": "Sort",
+                "rows": 120
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 120
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 1
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 1,
+                "filter": "((\"deletedAt\" IS NULL) AND (id = 'bench-large'::text) AND (\"organizationId\" = 'bench-large'::text))"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 3,
+                "filter": "(status = 'ACTIVE'::\"DocumentVersionStatus\")"
+              },
+              {
+                "type": "Bitmap Heap Scan",
+                "relation": "document_chunks",
+                "rows": 120,
+                "filter": "((\"documentId\" = 'bench-large'::text) AND (to_tsvector('english'::regconfig, text) @@ '''refund'' & ''polici'''::tsquery))"
+              },
+              {
+                "type": "Bitmap Index Scan",
+                "index": "document_chunks_versionId_chunkIndex_key",
+                "rows": 1200,
+                "indexCondition": "(\"versionId\" = v_2.id)"
+              }
+            ]
+          },
+          {
+            "executionMs": 15.339,
+            "sharedHitBlocks": 3715,
+            "sharedReadBlocks": 0,
+            "nodes": [
+              {
+                "type": "Limit",
+                "rows": 20
+              },
+              {
+                "type": "Sort",
+                "rows": 20
+              },
+              {
+                "type": "Hash Join",
+                "rows": 114,
+                "filter": "((s.id IS NOT NULL) OR (k.id IS NOT NULL))"
+              },
+              {
+                "type": "Hash Join",
+                "rows": 1372
+              },
+              {
+                "type": "Hash Join",
+                "rows": 1372
+              },
+              {
+                "type": "Hash Join",
+                "rows": 1372
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_chunks",
+                "rows": 1372
+              },
+              {
+                "type": "Hash",
+                "rows": 3
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 3
+              },
+              {
+                "type": "Hash",
+                "rows": 3
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 3
+              },
+              {
+                "type": "Hash",
+                "rows": 60
+              },
+              {
+                "type": "Subquery Scan",
+                "rows": 60
+              },
+              {
+                "type": "Limit",
+                "rows": 60
+              },
+              {
+                "type": "WindowAgg",
+                "rows": 60
+              },
+              {
+                "type": "Sort",
+                "rows": 1200
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 1200
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 1
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 1,
+                "filter": "((\"deletedAt\" IS NULL) AND (id = 'bench-large'::text) AND (\"organizationId\" = 'bench-large'::text))"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 3,
+                "filter": "(status = 'ACTIVE'::\"DocumentVersionStatus\")"
+              },
+              {
+                "type": "Bitmap Heap Scan",
+                "relation": "document_chunks",
+                "rows": 1200,
+                "filter": "((embedding IS NOT NULL) AND (\"documentId\" = 'bench-large'::text))"
+              },
+              {
+                "type": "Bitmap Index Scan",
+                "index": "document_chunks_versionId_chunkIndex_key",
+                "rows": 1200,
+                "indexCondition": "(\"versionId\" = v_1.id)"
+              },
+              {
+                "type": "Hash",
+                "rows": 60
+              },
+              {
+                "type": "Subquery Scan",
+                "rows": 60
+              },
+              {
+                "type": "Limit",
+                "rows": 60
+              },
+              {
+                "type": "WindowAgg",
+                "rows": 60
+              },
+              {
+                "type": "Sort",
+                "rows": 120
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 120
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 1
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 1,
+                "filter": "((\"deletedAt\" IS NULL) AND (id = 'bench-large'::text) AND (\"organizationId\" = 'bench-large'::text))"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 3,
+                "filter": "(status = 'ACTIVE'::\"DocumentVersionStatus\")"
+              },
+              {
+                "type": "Bitmap Heap Scan",
+                "relation": "document_chunks",
+                "rows": 120,
+                "filter": "((\"documentId\" = 'bench-large'::text) AND (to_tsvector('english'::regconfig, text) @@ '''refund'' & ''polici'''::tsquery))"
+              },
+              {
+                "type": "Bitmap Index Scan",
+                "index": "document_chunks_versionId_chunkIndex_key",
+                "rows": 1200,
+                "indexCondition": "(\"versionId\" = v_2.id)"
+              }
+            ]
+          },
+          {
+            "executionMs": 15.484,
+            "sharedHitBlocks": 3715,
+            "sharedReadBlocks": 0,
+            "nodes": [
+              {
+                "type": "Limit",
+                "rows": 20
+              },
+              {
+                "type": "Sort",
+                "rows": 20
+              },
+              {
+                "type": "Hash Join",
+                "rows": 114,
+                "filter": "((s.id IS NOT NULL) OR (k.id IS NOT NULL))"
+              },
+              {
+                "type": "Hash Join",
+                "rows": 1372
+              },
+              {
+                "type": "Hash Join",
+                "rows": 1372
+              },
+              {
+                "type": "Hash Join",
+                "rows": 1372
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_chunks",
+                "rows": 1372
+              },
+              {
+                "type": "Hash",
+                "rows": 3
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 3
+              },
+              {
+                "type": "Hash",
+                "rows": 3
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 3
+              },
+              {
+                "type": "Hash",
+                "rows": 60
+              },
+              {
+                "type": "Subquery Scan",
+                "rows": 60
+              },
+              {
+                "type": "Limit",
+                "rows": 60
+              },
+              {
+                "type": "WindowAgg",
+                "rows": 60
+              },
+              {
+                "type": "Sort",
+                "rows": 1200
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 1200
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 1
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 1,
+                "filter": "((\"deletedAt\" IS NULL) AND (id = 'bench-large'::text) AND (\"organizationId\" = 'bench-large'::text))"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 3,
+                "filter": "(status = 'ACTIVE'::\"DocumentVersionStatus\")"
+              },
+              {
+                "type": "Bitmap Heap Scan",
+                "relation": "document_chunks",
+                "rows": 1200,
+                "filter": "((embedding IS NOT NULL) AND (\"documentId\" = 'bench-large'::text))"
+              },
+              {
+                "type": "Bitmap Index Scan",
+                "index": "document_chunks_versionId_chunkIndex_key",
+                "rows": 1200,
+                "indexCondition": "(\"versionId\" = v_1.id)"
+              },
+              {
+                "type": "Hash",
+                "rows": 60
+              },
+              {
+                "type": "Subquery Scan",
+                "rows": 60
+              },
+              {
+                "type": "Limit",
+                "rows": 60
+              },
+              {
+                "type": "WindowAgg",
+                "rows": 60
+              },
+              {
+                "type": "Sort",
+                "rows": 120
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 120
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 1
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 1,
+                "filter": "((\"deletedAt\" IS NULL) AND (id = 'bench-large'::text) AND (\"organizationId\" = 'bench-large'::text))"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 3,
+                "filter": "(status = 'ACTIVE'::\"DocumentVersionStatus\")"
+              },
+              {
+                "type": "Bitmap Heap Scan",
+                "relation": "document_chunks",
+                "rows": 120,
+                "filter": "((\"documentId\" = 'bench-large'::text) AND (to_tsvector('english'::regconfig, text) @@ '''refund'' & ''polici'''::tsquery))"
+              },
+              {
+                "type": "Bitmap Index Scan",
+                "index": "document_chunks_versionId_chunkIndex_key",
+                "rows": 1200,
+                "indexCondition": "(\"versionId\" = v_2.id)"
+              }
+            ]
+          }
+        ],
+        "candidateGin": [
+          {
+            "executionMs": 8.509,
+            "sharedHitBlocks": 3712,
+            "sharedReadBlocks": 0,
+            "nodes": [
+              {
+                "type": "Limit",
+                "rows": 20
+              },
+              {
+                "type": "Sort",
+                "rows": 20
+              },
+              {
+                "type": "Hash Join",
+                "rows": 114,
+                "filter": "((s.id IS NOT NULL) OR (k.id IS NOT NULL))"
+              },
+              {
+                "type": "Hash Join",
+                "rows": 1372
+              },
+              {
+                "type": "Hash Join",
+                "rows": 1372
+              },
+              {
+                "type": "Hash Join",
+                "rows": 1372
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_chunks",
+                "rows": 1372
+              },
+              {
+                "type": "Hash",
+                "rows": 3
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 3
+              },
+              {
+                "type": "Hash",
+                "rows": 3
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 3
+              },
+              {
+                "type": "Hash",
+                "rows": 60
+              },
+              {
+                "type": "Subquery Scan",
+                "rows": 60
+              },
+              {
+                "type": "Limit",
+                "rows": 60
+              },
+              {
+                "type": "WindowAgg",
+                "rows": 60
+              },
+              {
+                "type": "Sort",
+                "rows": 1200
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 1200
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 1
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 1,
+                "filter": "((\"deletedAt\" IS NULL) AND (id = 'bench-large'::text) AND (\"organizationId\" = 'bench-large'::text))"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 3,
+                "filter": "(status = 'ACTIVE'::\"DocumentVersionStatus\")"
+              },
+              {
+                "type": "Bitmap Heap Scan",
+                "relation": "document_chunks",
+                "rows": 1200,
+                "filter": "((embedding IS NOT NULL) AND (\"documentId\" = 'bench-large'::text))"
+              },
+              {
+                "type": "Bitmap Index Scan",
+                "index": "document_chunks_versionId_chunkIndex_key",
+                "rows": 1200,
+                "indexCondition": "(\"versionId\" = v_1.id)"
+              },
+              {
+                "type": "Hash",
+                "rows": 60
+              },
+              {
+                "type": "Subquery Scan",
+                "rows": 60
+              },
+              {
+                "type": "Limit",
+                "rows": 60
+              },
+              {
+                "type": "WindowAgg",
+                "rows": 60
+              },
+              {
+                "type": "Sort",
+                "rows": 120
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 120
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 1
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 1,
+                "filter": "((\"deletedAt\" IS NULL) AND (id = 'bench-large'::text) AND (\"organizationId\" = 'bench-large'::text))"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 3,
+                "filter": "(status = 'ACTIVE'::\"DocumentVersionStatus\")"
+              },
+              {
+                "type": "Bitmap Heap Scan",
+                "relation": "document_chunks",
+                "rows": 120,
+                "filter": "(\"documentId\" = 'bench-large'::text)"
+              },
+              {
+                "type": "Bitmap Index Scan",
+                "index": "document_chunks_text_search_idx",
+                "rows": 137,
+                "indexCondition": "(to_tsvector('english'::regconfig, text) @@ '''refund'' & ''polici'''::tsquery)"
+              }
+            ]
+          },
+          {
+            "executionMs": 8.146,
+            "sharedHitBlocks": 3712,
+            "sharedReadBlocks": 0,
+            "nodes": [
+              {
+                "type": "Limit",
+                "rows": 20
+              },
+              {
+                "type": "Sort",
+                "rows": 20
+              },
+              {
+                "type": "Hash Join",
+                "rows": 114,
+                "filter": "((s.id IS NOT NULL) OR (k.id IS NOT NULL))"
+              },
+              {
+                "type": "Hash Join",
+                "rows": 1372
+              },
+              {
+                "type": "Hash Join",
+                "rows": 1372
+              },
+              {
+                "type": "Hash Join",
+                "rows": 1372
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_chunks",
+                "rows": 1372
+              },
+              {
+                "type": "Hash",
+                "rows": 3
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 3
+              },
+              {
+                "type": "Hash",
+                "rows": 3
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 3
+              },
+              {
+                "type": "Hash",
+                "rows": 60
+              },
+              {
+                "type": "Subquery Scan",
+                "rows": 60
+              },
+              {
+                "type": "Limit",
+                "rows": 60
+              },
+              {
+                "type": "WindowAgg",
+                "rows": 60
+              },
+              {
+                "type": "Sort",
+                "rows": 1200
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 1200
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 1
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 1,
+                "filter": "((\"deletedAt\" IS NULL) AND (id = 'bench-large'::text) AND (\"organizationId\" = 'bench-large'::text))"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 3,
+                "filter": "(status = 'ACTIVE'::\"DocumentVersionStatus\")"
+              },
+              {
+                "type": "Bitmap Heap Scan",
+                "relation": "document_chunks",
+                "rows": 1200,
+                "filter": "((embedding IS NOT NULL) AND (\"documentId\" = 'bench-large'::text))"
+              },
+              {
+                "type": "Bitmap Index Scan",
+                "index": "document_chunks_versionId_chunkIndex_key",
+                "rows": 1200,
+                "indexCondition": "(\"versionId\" = v_1.id)"
+              },
+              {
+                "type": "Hash",
+                "rows": 60
+              },
+              {
+                "type": "Subquery Scan",
+                "rows": 60
+              },
+              {
+                "type": "Limit",
+                "rows": 60
+              },
+              {
+                "type": "WindowAgg",
+                "rows": 60
+              },
+              {
+                "type": "Sort",
+                "rows": 120
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 120
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 1
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 1,
+                "filter": "((\"deletedAt\" IS NULL) AND (id = 'bench-large'::text) AND (\"organizationId\" = 'bench-large'::text))"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 3,
+                "filter": "(status = 'ACTIVE'::\"DocumentVersionStatus\")"
+              },
+              {
+                "type": "Bitmap Heap Scan",
+                "relation": "document_chunks",
+                "rows": 120,
+                "filter": "(\"documentId\" = 'bench-large'::text)"
+              },
+              {
+                "type": "Bitmap Index Scan",
+                "index": "document_chunks_text_search_idx",
+                "rows": 137,
+                "indexCondition": "(to_tsvector('english'::regconfig, text) @@ '''refund'' & ''polici'''::tsquery)"
+              }
+            ]
+          },
+          {
+            "executionMs": 9.202,
+            "sharedHitBlocks": 3712,
+            "sharedReadBlocks": 0,
+            "nodes": [
+              {
+                "type": "Limit",
+                "rows": 20
+              },
+              {
+                "type": "Sort",
+                "rows": 20
+              },
+              {
+                "type": "Hash Join",
+                "rows": 114,
+                "filter": "((s.id IS NOT NULL) OR (k.id IS NOT NULL))"
+              },
+              {
+                "type": "Hash Join",
+                "rows": 1372
+              },
+              {
+                "type": "Hash Join",
+                "rows": 1372
+              },
+              {
+                "type": "Hash Join",
+                "rows": 1372
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_chunks",
+                "rows": 1372
+              },
+              {
+                "type": "Hash",
+                "rows": 3
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 3
+              },
+              {
+                "type": "Hash",
+                "rows": 3
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 3
+              },
+              {
+                "type": "Hash",
+                "rows": 60
+              },
+              {
+                "type": "Subquery Scan",
+                "rows": 60
+              },
+              {
+                "type": "Limit",
+                "rows": 60
+              },
+              {
+                "type": "WindowAgg",
+                "rows": 60
+              },
+              {
+                "type": "Sort",
+                "rows": 1200
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 1200
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 1
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 1,
+                "filter": "((\"deletedAt\" IS NULL) AND (id = 'bench-large'::text) AND (\"organizationId\" = 'bench-large'::text))"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 3,
+                "filter": "(status = 'ACTIVE'::\"DocumentVersionStatus\")"
+              },
+              {
+                "type": "Bitmap Heap Scan",
+                "relation": "document_chunks",
+                "rows": 1200,
+                "filter": "((embedding IS NOT NULL) AND (\"documentId\" = 'bench-large'::text))"
+              },
+              {
+                "type": "Bitmap Index Scan",
+                "index": "document_chunks_versionId_chunkIndex_key",
+                "rows": 1200,
+                "indexCondition": "(\"versionId\" = v_1.id)"
+              },
+              {
+                "type": "Hash",
+                "rows": 60
+              },
+              {
+                "type": "Subquery Scan",
+                "rows": 60
+              },
+              {
+                "type": "Limit",
+                "rows": 60
+              },
+              {
+                "type": "WindowAgg",
+                "rows": 60
+              },
+              {
+                "type": "Sort",
+                "rows": 120
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 120
+              },
+              {
+                "type": "Nested Loop",
+                "rows": 1
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "documents",
+                "rows": 1,
+                "filter": "((\"deletedAt\" IS NULL) AND (id = 'bench-large'::text) AND (\"organizationId\" = 'bench-large'::text))"
+              },
+              {
+                "type": "Seq Scan",
+                "relation": "document_versions",
+                "rows": 3,
+                "filter": "(status = 'ACTIVE'::\"DocumentVersionStatus\")"
+              },
+              {
+                "type": "Bitmap Heap Scan",
+                "relation": "document_chunks",
+                "rows": 120,
+                "filter": "(\"documentId\" = 'bench-large'::text)"
+              },
+              {
+                "type": "Bitmap Index Scan",
+                "index": "document_chunks_text_search_idx",
+                "rows": 137,
+                "indexCondition": "(to_tsvector('english'::regconfig, text) @@ '''refund'' & ''polici'''::tsquery)"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
