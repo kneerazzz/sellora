@@ -31,12 +31,40 @@ already creates `ALLOWANCE_EXHAUSTED`. The worker now records
 15-minute bucket; repeated polls use the unique dedupe key. Events contain
 kind/time/organization only. The usage summary and operations view expose recent
 events to authorized staff. Set `SLACK_ALERT_WEBHOOK_URL` as a worker-only HTTPS
-secret reference after the operator creates a private Slack channel and webhook.
-The worker sends only alert kind, organization ID, time and alert ID. A database
-claim limits parallel delivery and retries failures after one minute. A crash
-after Slack accepts a message can cause one duplicate. The disposable local
-webhook fixture checks success, failure, retry and content redaction. A real
-destination test remains open; never paste the webhook URL into Git or logs.
+secret for the operator's private Slack channel. Set `SLACK_CLIENT_WEBHOOK_URLS`
+as a worker-only JSON secret mapping Sellora organization IDs to client Slack
+webhooks, for example `{ "<organization-id>": "<client-webhook-url>" }`. Get a
+client's organization ID from authenticated `GET /api/v1/users/me`. Client URLs
+must use `https://hooks.slack.com`. An organization without a client mapping
+receives no client Slack notification. Never use one client's webhook as the
+operator webhook. n8n's client-owned Slack credentials are separate from these
+Sellora operational alerts.
+
+The operator message contains alert kind, organization ID, time and alert ID.
+The client message omits organization ID and contains only its own alert kind,
+time and alert ID. Separate database claims and timestamps track operator and
+client delivery. Failure retries after one minute. A crash after Slack accepts
+a message can cause one duplicate. The disposable local webhook fixture checks
+two organizations, isolated destinations, failure/retry and content redaction.
+A real destination test remains open; never paste webhook URLs into Git or logs.
+
+## Connect a test workspace
+
+1. Create a private test channel in your Slack workspace. Follow [Slack's
+   Incoming Webhooks guide](https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks)
+   to create an app, enable webhooks and authorize that channel. Keep its URL
+   in a secret store; Slack treats it as a secret.
+2. Supply that URL to the workflow worker as `SLACK_ALERT_WEBHOOK_URL`. It sends
+   only operator alerts. Do not configure a client mapping for the first test.
+3. With a consenting client and a separate client test channel, create a second
+   webhook in that client's workspace. Add only that client's Sellora ID and URL
+   to `SLACK_CLIENT_WEBHOOK_URLS`. Restart the worker after changing secrets.
+4. Run one bounded synthetic alert for each destination, check the two channels,
+   and record both delivery timestamps and failure/retry behavior. Do not start
+   against an unknown live queue or use client content as the test payload.
+
+This manual mapping suits a small pilot. Automated client onboarding needs a
+secret-store-backed connection flow and rotation/revocation procedure.
 
 Operational checks are not client acceptance. A readiness probe should use a
 short caller timeout; a database outage may delay the DB driver's response.

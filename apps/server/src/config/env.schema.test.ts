@@ -41,7 +41,8 @@ describe('supported startup configuration', () => {
       { PROVIDER_REQUEST_MAX_BYTES: '100' }, { PROVIDER_RESPONSE_MAX_BYTES: '100' },
       { PROVIDER_INPUT_MAX_CHARS: '999' }, { PROVIDER_QUESTION_MAX: '0' },
       { DOCUMENT_EXTRACTED_MAX_CHARS: '999' }, { DOCUMENT_MAX_PAGES: '0' },
-      { JWT_REFRESH_EXPIRES_IN: '0d' }, { JWT_REFRESH_EXPIRES_IN: '999999999999999999999d' }]) {
+      { JWT_REFRESH_EXPIRES_IN: '0d' }, { JWT_REFRESH_EXPIRES_IN: '999999999999999999999d' },
+      { SLACK_ALERT_WEBHOOK_URL: 'https://example.com/hook' }]) {
       assert.equal(envSchema.safeParse({ ...required, ...patch }).success, false)
     }
     const result = envSchema.safeParse({ ...required, JWT_ACCESS_SECRET: 'private-short-value' })

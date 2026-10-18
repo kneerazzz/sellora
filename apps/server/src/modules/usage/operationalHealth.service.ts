@@ -1,9 +1,19 @@
 import { prisma } from '../../config/prisma'
 import { env } from '../../config/env'
+import { z } from 'zod'
 
 const workerRole = 'workflow'
 const workerMaxAgeMs = 30_000
 const alertWindowMs = 15 * 60_000
+
+const clientWebhooks = (() => {
+  try {
+    return z.record(z.string(), z.url().refine(value => new URL(value).origin === 'https://hooks.slack.com'))
+      .parse(JSON.parse(env.SLACK_CLIENT_WEBHOOK_URLS))
+  } catch {
+    throw new Error('Invalid client Slack webhook configuration')
+  }
+})()
 
 export async function recordWorkerHeartbeat(now = new Date()) {
   await prisma.workerHeartbeat.upsert({
@@ -45,30 +55,54 @@ export async function recordOperationalAlerts(now = new Date()) {
   if (alerts.length) await prisma.usageAlertEvent.createMany({ data: alerts, skipDuplicates: true })
 }
 
-export async function notifyOperationalAlerts(now = new Date(), webhookUrl = env.SLACK_ALERT_WEBHOOK_URL) {
-  if (!webhookUrl) return
+export async function notifyOperationalAlerts(
+  now = new Date(), operatorWebhookUrl = env.SLACK_ALERT_WEBHOOK_URL,
+  clientWebhookUrls: Record<string, string> = clientWebhooks
+) {
   // shortcut: a crash after Slack accepts a message can duplicate it; upgrade if delivery must be exactly once.
-  const pending = await prisma.usageAlertEvent.findMany({
-    where: { notifiedAt: null, OR: [{ notifyAfter: null }, { notifyAfter: { lte: now } }] },
-    orderBy: { createdAt: 'asc' }, take: 10,
-  })
-  for (const alert of pending) {
+  // shortcut: client webhook mapping is worker configuration, move to a secret store when client onboarding is automated.
+  const clientOrganizationIds = Object.keys(clientWebhookUrls)
+  const [operatorPending, clientPending] = await Promise.all([
+    operatorWebhookUrl ? prisma.usageAlertEvent.findMany({
+      where: { notifiedAt: null, OR: [{ notifyAfter: null }, { notifyAfter: { lte: now } }] },
+      orderBy: { createdAt: 'asc' }, take: 10,
+    }) : [],
+    clientOrganizationIds.length ? prisma.usageAlertEvent.findMany({
+      where: { organizationId: { in: clientOrganizationIds }, clientNotifiedAt: null,
+        OR: [{ clientNotifyAfter: null }, { clientNotifyAfter: { lte: now } }] },
+      orderBy: { createdAt: 'asc' }, take: 10,
+    }) : [],
+  ])
+  for (const [alert, destination, webhookUrl] of [
+    ...operatorPending.map(alert => [alert, 'operator', operatorWebhookUrl] as const),
+    ...clientPending.map(alert => [alert, 'client', clientWebhookUrls[alert.organizationId]] as const),
+  ]) {
+    if (!webhookUrl) continue
+    const operator = destination === 'operator'
     const claimed = await prisma.usageAlertEvent.updateMany({
-      where: { id: alert.id, notifiedAt: null,
-        OR: [{ notifyAfter: null }, { notifyAfter: { lte: now } }] },
-      data: { notifyAfter: new Date(now.getTime() + 60_000) },
+      where: operator ? { id: alert.id, notifiedAt: null,
+        OR: [{ notifyAfter: null }, { notifyAfter: { lte: now } }] } :
+        { id: alert.id, clientNotifiedAt: null,
+          OR: [{ clientNotifyAfter: null }, { clientNotifyAfter: { lte: now } }] },
+      data: operator ? { notifyAfter: new Date(now.getTime() + 60_000) } :
+        { clientNotifyAfter: new Date(now.getTime() + 60_000) },
     })
     if (!claimed.count) continue
     try {
       const response = await fetch(webhookUrl, {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ text: `Sellora ${alert.kind} for organization ${alert.organizationId} at ${alert.createdAt.toISOString()}. Alert ${alert.id}.` }),
+        body: JSON.stringify({ text: operator
+          ? `Sellora ${alert.kind} for organization ${alert.organizationId} at ${alert.createdAt.toISOString()}. Alert ${alert.id}.`
+          : `Sellora ${alert.kind} at ${alert.createdAt.toISOString()}. Alert ${alert.id}.` }),
         signal: AbortSignal.timeout(5_000),
       })
       if (!response.ok) throw new Error('Slack webhook rejected alert')
-      await prisma.usageAlertEvent.update({ where: { id: alert.id }, data: { notifiedAt: new Date(), notifyAfter: null } })
+      await prisma.usageAlertEvent.update({ where: { id: alert.id }, data: operator
+        ? { notifiedAt: new Date(), notifyAfter: null }
+        : { clientNotifiedAt: new Date(), clientNotifyAfter: null } })
     } catch {
-      console.error(JSON.stringify({ event: 'alert_delivery_failed', alertId: alert.id, organizationId: alert.organizationId }))
+      console.error(JSON.stringify({ event: 'alert_delivery_failed', alertId: alert.id,
+        organizationId: alert.organizationId, destination }))
     }
   }
 }

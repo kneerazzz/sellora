@@ -71,6 +71,7 @@ try {
   const { prisma } = await import('../../src/config/prisma')
   const { recordOperationalAlerts, getOperationalStatus, notifyOperationalAlerts } = await import('../../src/modules/usage/operationalHealth.service')
   const organization = await prisma.organization.create({ data: { name: 'Operations fixture', slug: `operations-${randomUUID()}` } })
+  const otherOrganization = await prisma.organization.create({ data: { name: 'Other operations fixture', slug: `operations-${randomUUID()}` } })
   await prisma.usageTrace.create({ data: {
     organizationId: organization.id, operation: 'fixture', status: 'FAILED', completedAt: new Date(),
     attempts: { create: { component: 'generation', attemptNumber: 1, category: 'PROVIDER',
@@ -81,20 +82,23 @@ try {
     leaseExpiresAt: new Date(Date.now() - 60_000) } })
   await recordOperationalAlerts()
   await recordOperationalAlerts()
+  const otherAlert = await prisma.usageAlertEvent.create({ data: { organizationId: otherOrganization.id,
+    kind: 'PROVIDER_FAILURE', dedupeKey: 'other-org-fixture' } })
   const alerts = await prisma.usageAlertEvent.findMany({ where: { organizationId: organization.id } })
   assert.deepEqual(alerts.map(alert => alert.kind).sort(), ['PROVIDER_FAILURE', 'WORKFLOW_STALE'])
   const operations = await getOperationalStatus(organization.id)
   assert.equal(operations.staleRuns[0]?.id, staleRun.id)
   assert.equal(operations.alerts.length, 2)
-  const deliveries: string[] = []
+  const deliveries: Array<{ path: string; body: string }> = []
   let rejectFirst = true
   const webhook = createHttpServer((request, response) => {
     let body = ''
     request.on('data', chunk => { body += String(chunk) })
     request.on('end', () => {
-      deliveries.push(body)
-      response.writeHead(rejectFirst ? 503 : 200).end(rejectFirst ? 'retry' : 'ok')
-      rejectFirst = false
+      deliveries.push({ path: request.url ?? '', body })
+      const reject = rejectFirst && request.url === '/operator'
+      response.writeHead(reject ? 503 : 200).end(reject ? 'retry' : 'ok')
+      if (reject) rejectFirst = false
     })
   })
   webhook.listen(0, '127.0.0.1')
@@ -102,16 +106,26 @@ try {
   try {
     const webhookAddress = webhook.address()
     assert.ok(webhookAddress && typeof webhookAddress === 'object')
-    const webhookUrl = `http://127.0.0.1:${webhookAddress.port}/fixture`
-    await notifyOperationalAlerts(new Date(), webhookUrl)
-    await notifyOperationalAlerts(new Date(Date.now() + 61_000), webhookUrl)
-    assert.equal(deliveries.length, 3)
-    assert.ok(deliveries.every(body => !body.includes('secret document content')))
+    const baseUrl = `http://127.0.0.1:${webhookAddress.port}`
+    const clients = { [organization.id]: `${baseUrl}/client-a`, [otherOrganization.id]: `${baseUrl}/client-b` }
+    await notifyOperationalAlerts(new Date(), `${baseUrl}/operator`, clients)
+    await notifyOperationalAlerts(new Date(Date.now() + 61_000), `${baseUrl}/operator`, clients)
+    assert.equal(deliveries.filter(delivery => delivery.path === '/operator').length, 4)
+    assert.equal(deliveries.filter(delivery => delivery.path === '/client-a').length, 2)
+    assert.equal(deliveries.filter(delivery => delivery.path === '/client-b').length, 1)
+    assert.ok(deliveries.every(delivery => !delivery.body.includes('secret document content')))
+    assert.ok(deliveries.filter(delivery => delivery.path === '/client-a').every(delivery =>
+      alerts.some(alert => delivery.body.includes(alert.id)) && !delivery.body.includes(otherOrganization.id)))
+    assert.ok(deliveries.filter(delivery => delivery.path === '/client-b').every(delivery =>
+      delivery.body.includes(otherAlert.id) && !delivery.body.includes(organization.id)))
     assert.equal(await prisma.usageAlertEvent.count({ where: { organizationId: organization.id, notifiedAt: { not: null } } }), 2)
+    assert.equal(await prisma.usageAlertEvent.count({ where: { organizationId: organization.id, clientNotifiedAt: { not: null } } }), 2)
+    assert.equal(await prisma.usageAlertEvent.count({ where: { organizationId: otherOrganization.id, clientNotifiedAt: { not: null } } }), 1)
   } finally {
     await new Promise<void>((resolve, reject) => webhook.close(error => error ? reject(error) : resolve()))
   }
   await prisma.organization.delete({ where: { id: organization.id } })
+  await prisma.organization.delete({ where: { id: otherOrganization.id } })
   await start('src/workers/workflowWorker.ts', 'Workflow worker started', {
     WORKFLOW_WORKER_POLL_INTERVAL_MS: '100', WORKFLOW_WORKER_BATCH_SIZE: '1',
   })

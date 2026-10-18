@@ -1345,6 +1345,8 @@ model UsageAlertEvent {
   createdAt      DateTime @default(now())
   notifiedAt     DateTime?
   notifyAfter    DateTime?
+  clientNotifiedAt   DateTime?
+  clientNotifyAfter DateTime?
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@unique([organizationId, dedupeKey])

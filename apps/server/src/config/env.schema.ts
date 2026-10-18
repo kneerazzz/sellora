@@ -39,5 +39,6 @@ export const envSchema = z.object({
     error: 'Only local Nomic/768 embeddings are supported; OpenAI embeddings are not implemented.',
   }).default('local'),
   LOCAL_EMBEDDING_SERVICE_URL: z.url().default('http://127.0.0.1:11435'),
-  SLACK_ALERT_WEBHOOK_URL: z.url().startsWith('https://').optional(),
+  SLACK_ALERT_WEBHOOK_URL: z.url().refine(value => new URL(value).origin === 'https://hooks.slack.com').optional(),
+  SLACK_CLIENT_WEBHOOK_URLS: z.string().default('{}'),
 })

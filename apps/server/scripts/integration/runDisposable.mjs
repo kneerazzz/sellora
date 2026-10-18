@@ -46,7 +46,9 @@ try {
     CLIENT_URL: 'http://localhost:3000', AUTH_ATTEMPT_MAX: '60', AUTH_ATTEMPT_WINDOW_SECONDS: '900',
     EMBEDDING_PROVIDER: 'local', AI_PROVIDER: 'groq', OPENAI_API_KEY: '', GROQ_API_KEY: '',
     LOCAL_EMBEDDING_SERVICE_URL: 'http://127.0.0.1:1',
+    SLACK_CLIENT_WEBHOOK_URLS: '{}',
   }
+  delete env.SLACK_ALERT_WEBHOOK_URL
   run(process.execPath, ['node_modules/prisma/build/index.js', 'migrate', 'deploy'], env)
   run(process.execPath, ['node_modules/prisma/build/index.js', 'migrate', 'deploy'], env)
   console.log('PASS clean Prisma deployment and repeat deployment')
