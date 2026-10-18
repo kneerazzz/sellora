@@ -50,7 +50,9 @@ try {
   run(process.execPath, ['node_modules/prisma/build/index.js', 'migrate', 'deploy'], env)
   run(process.execPath, ['node_modules/prisma/build/index.js', 'migrate', 'deploy'], env)
   console.log('PASS clean Prisma deployment and repeat deployment')
-  if (process.argv.includes('--questionnaire-only')) {
+  if (process.argv.includes('--operations-only')) {
+    run(process.execPath, ['--import', 'tsx', 'scripts/integration/startup.ts'], env)
+  } else if (process.argv.includes('--questionnaire-only')) {
     run(process.execPath, ['--import', 'tsx', 'scripts/integration/questionnaires.ts'], env)
   } else if (process.argv.includes('--performance-only')) {
     run(process.execPath, ['--import', 'tsx', 'scripts/bench/retrieval.ts'], env)

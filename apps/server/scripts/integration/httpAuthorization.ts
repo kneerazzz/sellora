@@ -267,6 +267,7 @@ const cases: Case[] = [
         return { route: `/documents/${doc.id}`, body: { expectedActiveVersionId: doc.activeVersionId } } } },
     { method: 'GET', route: '/api-keys', allow: managers },
     { method: 'GET', route: '/usage/summary', allow: managers },
+  { method: 'GET', route: '/usage/operations', allow: managers },
     { method: 'PUT', route: '/usage/pause', allow: ['ADMIN'], body: { paused: false } },
     { method: 'GET', route: '/drafts', allow: staff },
     { method: 'POST', route: '/drafts', allow: staff, status: 201,

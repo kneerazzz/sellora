@@ -2,8 +2,10 @@ import assert from 'node:assert/strict'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { once } from 'node:events'
 import { createServer } from 'node:net'
+import { createServer as createHttpServer } from 'node:http'
 import { setTimeout as delay } from 'node:timers/promises'
 import pg from 'pg'
+import { randomUUID } from 'node:crypto'
 
 const target = process.env.SELLORA_DISPOSABLE_DATABASE_URL
 if (!target) throw new Error('Explicit disposable database required')
@@ -61,12 +63,62 @@ try {
   const health = await fetch(`http://127.0.0.1:${port}/health`, { signal: AbortSignal.timeout(5000) })
   assert.equal(health.status, 200)
   assert.equal((await health.json() as { data: { status: string } }).data.status, 'ok')
+  assert.equal((await fetch(`http://127.0.0.1:${port}/ready`)).status, 200)
+  assert.equal((await fetch(`http://127.0.0.1:${port}/health/worker`)).status, 503)
   const denied = await fetch(`http://127.0.0.1:${port}/api/v1/documents`, { signal: AbortSignal.timeout(5000) })
   assert.equal(denied.status, 401)
+  assert.match(denied.headers.get('x-request-id') ?? '', /^[0-9a-f-]{36}$/)
+  const { prisma } = await import('../../src/config/prisma')
+  const { recordOperationalAlerts, getOperationalStatus, notifyOperationalAlerts } = await import('../../src/modules/usage/operationalHealth.service')
+  const organization = await prisma.organization.create({ data: { name: 'Operations fixture', slug: `operations-${randomUUID()}` } })
+  await prisma.usageTrace.create({ data: {
+    organizationId: organization.id, operation: 'fixture', status: 'FAILED', completedAt: new Date(),
+    attempts: { create: { component: 'generation', attemptNumber: 1, category: 'PROVIDER',
+      status: 'FAILED', startedAt: new Date() } },
+  } })
+  const staleRun = await prisma.workflowRun.create({ data: { organizationId: organization.id,
+    type: 'CUSTOM', input: { secret: 'secret document content' }, status: 'RUNNING', startedAt: new Date(Date.now() - 120_000),
+    leaseExpiresAt: new Date(Date.now() - 60_000) } })
+  await recordOperationalAlerts()
+  await recordOperationalAlerts()
+  const alerts = await prisma.usageAlertEvent.findMany({ where: { organizationId: organization.id } })
+  assert.deepEqual(alerts.map(alert => alert.kind).sort(), ['PROVIDER_FAILURE', 'WORKFLOW_STALE'])
+  const operations = await getOperationalStatus(organization.id)
+  assert.equal(operations.staleRuns[0]?.id, staleRun.id)
+  assert.equal(operations.alerts.length, 2)
+  const deliveries: string[] = []
+  let rejectFirst = true
+  const webhook = createHttpServer((request, response) => {
+    let body = ''
+    request.on('data', chunk => { body += String(chunk) })
+    request.on('end', () => {
+      deliveries.push(body)
+      response.writeHead(rejectFirst ? 503 : 200).end(rejectFirst ? 'retry' : 'ok')
+      rejectFirst = false
+    })
+  })
+  webhook.listen(0, '127.0.0.1')
+  await once(webhook, 'listening')
+  try {
+    const webhookAddress = webhook.address()
+    assert.ok(webhookAddress && typeof webhookAddress === 'object')
+    const webhookUrl = `http://127.0.0.1:${webhookAddress.port}/fixture`
+    await notifyOperationalAlerts(new Date(), webhookUrl)
+    await notifyOperationalAlerts(new Date(Date.now() + 61_000), webhookUrl)
+    assert.equal(deliveries.length, 3)
+    assert.ok(deliveries.every(body => !body.includes('secret document content')))
+    assert.equal(await prisma.usageAlertEvent.count({ where: { organizationId: organization.id, notifiedAt: { not: null } } }), 2)
+  } finally {
+    await new Promise<void>((resolve, reject) => webhook.close(error => error ? reject(error) : resolve()))
+  }
+  await prisma.organization.delete({ where: { id: organization.id } })
   await start('src/workers/workflowWorker.ts', 'Workflow worker started', {
     WORKFLOW_WORKER_POLL_INTERVAL_MS: '100', WORKFLOW_WORKER_BATCH_SIZE: '1',
   })
   await delay(500)
+  assert.equal((await fetch(`http://127.0.0.1:${port}/health/worker`)).status, 200)
+  await db.query(`UPDATE worker_heartbeats SET "seenAt" = NOW() - INTERVAL '2 minutes' WHERE role = 'workflow'`)
+  assert.equal((await fetch(`http://127.0.0.1:${port}/health/worker`)).status, 503)
   for (const child of children) assert.equal(child.exitCode, null)
   console.log('PASS migrated API health, unauthenticated document rejection and empty-queue worker startup')
 } finally {

@@ -4,6 +4,7 @@ import { authenticate, authorize } from '../../middleware/auth.middleware'
 import { asyncHandler } from '../../utils/asyncHandler'
 import { ApiResponse } from '../../utils/apiResponse'
 import { getUsageSummary, setUsagePause } from './usageControls.service'
+import { getOperationalStatus } from './operationalHealth.service'
 
 export const usageControlsRouter = Router()
 usageControlsRouter.use(authenticate, authorize('ADMIN', 'MANAGER'))
@@ -11,6 +12,11 @@ usageControlsRouter.use(authenticate, authorize('ADMIN', 'MANAGER'))
 usageControlsRouter.get('/summary', asyncHandler(async (req, res) => {
   const summary = await getUsageSummary(req.user.organizationId)
   res.json(ApiResponse.ok('Usage summary fetched', summary))
+}))
+
+usageControlsRouter.get('/operations', asyncHandler(async (req, res) => {
+  const status = await getOperationalStatus(req.user.organizationId)
+  res.json(ApiResponse.ok('Operational status fetched', status))
 }))
 
 usageControlsRouter.put('/pause', authorize('ADMIN'), asyncHandler(async (req, res) => {

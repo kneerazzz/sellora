@@ -1343,11 +1343,20 @@ model UsageAlertEvent {
   kind           String
   dedupeKey      String
   createdAt      DateTime @default(now())
+  notifiedAt     DateTime?
+  notifyAfter    DateTime?
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@unique([organizationId, dedupeKey])
   @@index([organizationId, createdAt])
   @@map("usage_alert_events")
+}
+
+model WorkerHeartbeat {
+  role   String   @id
+  seenAt DateTime
+
+  @@map("worker_heartbeats")
 }
 
 enum WorkloadReservationStatus {

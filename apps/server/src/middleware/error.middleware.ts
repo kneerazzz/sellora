@@ -3,7 +3,7 @@ import { ApiError } from '../utils/apiError'
 
 export function errorHandler(
   err: Error,
-  _req: Request,
+  req: Request,
   res: Response,
   _next: NextFunction
 ): void {
@@ -42,7 +42,9 @@ export function errorHandler(
   }
 
   // Unknown / unexpected error — don't leak internals
-  console.error('❌ Unhandled error:', err)
+  console.error(JSON.stringify({ event: 'http_error', requestId: req.requestId,
+    organizationId: req.user?.organizationId ?? req.apiKey?.organizationId ?? null,
+    errorType: err.constructor.name }))
   res.status(500).json({
     success: false,
     statusCode: 500,

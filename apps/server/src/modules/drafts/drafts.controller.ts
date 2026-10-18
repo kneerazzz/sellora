@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto'
 import { Request, Response } from 'express'
 import { ApiResponse } from '../../utils/apiResponse'
 import { asyncHandler } from '../../utils/asyncHandler'
@@ -19,7 +18,7 @@ const createDraft = asyncHandler(async (req: Request, res: Response) => {
     {
       organizationId: req.user.organizationId,
       userId: req.user.id,
-      requestId: randomUUID(),
+      requestId: req.requestId,
       signal,
     }
   ))

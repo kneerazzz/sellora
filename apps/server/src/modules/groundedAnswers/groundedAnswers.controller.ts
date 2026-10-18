@@ -5,7 +5,6 @@ import { ApiError } from '../../utils/apiError'
 import { groundedAnswersService } from './groundedAnswers.service'
 import type { GroundedAnswerInput } from './groundedAnswers.schema'
 import { withClientDisconnectSignal } from '../../services/provider/httpCancellation'
-import { randomUUID } from 'node:crypto'
 
 const answerQuestion = asyncHandler(async (req: Request, res: Response) => {
   const organizationId = req.user?.organizationId ?? req.apiKey?.organizationId
@@ -18,7 +17,7 @@ const answerQuestion = asyncHandler(async (req: Request, res: Response) => {
       organizationId,
       userId: req.user?.id,
       signal,
-      requestId: randomUUID(),
+      requestId: req.requestId,
     })
   )
 

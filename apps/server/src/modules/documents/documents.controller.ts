@@ -13,7 +13,6 @@ import type {
   DeleteDocumentInput,
   SourceReferencesInput,
 } from './documents.schema'
-import { randomUUID } from 'node:crypto'
 
 const createDocument = asyncHandler(async (req: Request, res: Response) => {
   const document = await documentsService.createDocument(req.body as CreateDocumentInput, {
@@ -46,7 +45,7 @@ const uploadDocument = asyncHandler(async (req: Request, res: Response) => {
   const document = await documentsService.uploadDocument(req.body as UploadDocumentInput, {
     organizationId: req.user.organizationId,
     userId: req.user.id,
-    requestId: randomUUID(),
+    requestId: req.requestId,
   })
 
   res.status(201).json(ApiResponse.created('Document uploaded and ingested', document))
@@ -59,7 +58,7 @@ const uploadMultipartDocument = asyncHandler(async (req: Request, res: Response)
     {
       organizationId: req.user.organizationId,
       userId: req.user.id,
-      requestId: randomUUID(),
+      requestId: req.requestId,
     }
   )
 
@@ -80,7 +79,7 @@ const ingestDocumentText = asyncHandler(async (req: Request, res: Response) => {
     req.params.id as string,
     req.body as IngestDocumentTextInput,
     req.user.organizationId,
-    { requestId: randomUUID() }
+    { requestId: req.requestId }
   )
 
   res.status(200).json(ApiResponse.ok('Document ingested', document))
@@ -89,14 +88,14 @@ const ingestDocumentText = asyncHandler(async (req: Request, res: Response) => {
 const replaceDocumentText = asyncHandler(async (req: Request, res: Response) => {
   const input = req.body as ReplaceDocumentTextInput
   const document = await documentsService.replaceDocumentText(req.params.id as string, input,
-    req.user.organizationId, input.expectedActiveVersionId, { requestId: randomUUID() })
+    req.user.organizationId, input.expectedActiveVersionId, { requestId: req.requestId })
   res.status(200).json(ApiResponse.ok('Document replacement published', document))
 })
 
 const replaceDocumentFile = asyncHandler(async (req: Request, res: Response) => {
   const document = await documentsService.replaceMultipartDocument(req.params.id as string,
     req.file, req.body as ReplaceDocumentFileInput,
-    { organizationId: req.user.organizationId, userId: req.user.id, requestId: randomUUID() })
+    { organizationId: req.user.organizationId, userId: req.user.id, requestId: req.requestId })
   res.status(200).json(ApiResponse.ok('Document replacement published', document))
 })
 
@@ -125,7 +124,7 @@ const previewDocumentErasure = asyncHandler(async (req: Request, res: Response) 
 
 const retryDocumentVersion = asyncHandler(async (req: Request, res: Response) => {
   const document = await documentsService.retryDocumentVersion(req.params.id as string,
-    req.params.versionId as string, req.user.organizationId, { requestId: randomUUID() })
+    req.params.versionId as string, req.user.organizationId, { requestId: req.requestId })
   res.status(200).json(ApiResponse.ok('Document version published', document))
 })
 

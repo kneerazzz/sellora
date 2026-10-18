@@ -10,8 +10,8 @@ async function bootstrap() {
   try {
     await prisma.$connect()
     console.log('PostgreSQL connected')
-  } catch (error) {
-    console.error('Failed to connect to PostgreSQL:', error)
+  } catch {
+    console.error('Failed to connect to PostgreSQL')
     process.exit(1)
   }
 
@@ -37,13 +37,13 @@ async function bootstrap() {
   process.on('SIGINT', () => shutdown('SIGINT'))
 
   // ── Unhandled errors ───────────────────────────────────────────────────
-  process.on('unhandledRejection', (reason) => {
-    console.error('Unhandled Promise Rejection:', reason)
+  process.on('unhandledRejection', () => {
+    console.error('Unhandled Promise Rejection')
     process.exit(1)
   })
 
-  process.on('uncaughtException', (error) => {
-    console.error('Uncaught Exception:', error)
+  process.on('uncaughtException', () => {
+    console.error('Uncaught Exception')
     process.exit(1)
   })
 }

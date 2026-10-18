@@ -5,7 +5,6 @@ import { aiExtractionsService } from './aiExtractions.service'
 import type { SalesExtractionInput } from './aiExtractions.schema'
 import type { RfpRequestInput } from './rfpExtraction.schema'
 import { withClientDisconnectSignal } from '../../services/provider/httpCancellation'
-import { randomUUID } from 'node:crypto'
 
 const extractSalesEvent = asyncHandler(async (req: Request, res: Response) => {
   const orgId = req.user?.organizationId || req.apiKey?.organizationId
@@ -18,7 +17,7 @@ const extractSalesEvent = asyncHandler(async (req: Request, res: Response) => {
         organizationId: orgId,
         userId: req.user?.id,
         signal,
-        requestId: randomUUID(),
+        requestId: req.requestId,
       }
     )
   )
@@ -37,7 +36,7 @@ const extractAndAnswerRfp = asyncHandler(async (req: Request, res: Response) => 
         organizationId: orgId,
         userId: req.user?.id,
         signal,
-        requestId: randomUUID(),
+        requestId: req.requestId,
       }
     )
   )

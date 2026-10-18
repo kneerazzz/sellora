@@ -320,7 +320,7 @@ async function processClaimedWorkflowRun(claim: WorkflowClaim, userId?: string, 
         } catch (error) {
           if (abort.signal.aborted) throw error
           if (gmailEvent) console.error('Failed to prepare Gmail review answer')
-          else console.error('Failed to get grounded answer for workflow question', error)
+          else console.error('Failed to get grounded answer for workflow question')
           groundedAnswers.push({ question, answer: null, refused: true, error: 'Answer processing failed', citations: [] })
         }
         const saved = await checkpointWorkflow(claim,
