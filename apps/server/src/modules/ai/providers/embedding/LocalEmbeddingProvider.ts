@@ -36,7 +36,8 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
 
     // Nomic requires specific prefixes for best performance
     const prefix = options?.isQuery ? 'search_query: ' : 'search_document: '
-    const prefixedTexts = texts.map(t => prefix + t)
+    const uniqueTexts = [...new Set(texts)]
+    const prefixedTexts = uniqueTexts.map(t => prefix + t)
 
     try {
       const vectors = await waitForUncancellableProviderWork({
@@ -55,7 +56,7 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
         work: async () => {
           const embeddings = await this.embedModel.getTextEmbeddings(prefixedTexts)
           try {
-            validateEmbeddings(embeddings, texts.length)
+            validateEmbeddings(embeddings, uniqueTexts.length)
           } catch (error) {
             throw new ProviderOperationError('Local embedding response failed validation', 'validation', [], false, undefined, { cause: error })
           }
@@ -63,18 +64,18 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
         },
       })
       if (options?.usage) {
-        const characters = texts.reduce((total, text) => total + text.length, 0)
+        const characters = uniqueTexts.reduce((total, text) => total + text.length, 0)
         await recordUsageQuantities({
           traceId: options.usage.traceId, component: 'embedding', attemptNumber: 1,
           inputQuantity: characters, outputQuantity: 0, totalQuantity: characters,
           unitType: 'CHARACTERS', measurementStatus: 'ESTIMATED',
         })
       }
-      return vectors
-    } catch (error: any) {
+      const byText = new Map(uniqueTexts.map((text, index) => [text, vectors[index]!]))
+      return texts.map(text => byText.get(text)!)
+    } catch (error: unknown) {
       if (error instanceof ProviderOperationError) throw error
-      console.error('LocalEmbeddingProvider error:', error)
-      throw ApiError.internal(`Failed to generate embeddings from local Ollama service. ${error.message}`)
+      throw ApiError.internal('Failed to generate embeddings from local Ollama service')
     }
   }
 }

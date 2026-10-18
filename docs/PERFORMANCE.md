@@ -1,4 +1,4 @@
-# Local performance baseline — packets 13A/13B
+# Local performance baseline — packets 13A–13E
 
 **Measured:** 2026-10-18. Synthetic text and deterministic model adapters only.
 Run from `apps/server`:
@@ -71,3 +71,33 @@ workload. No vector index, candidate-count rewrite, batched production write or
 query-filter change was made. Revisit those only with a representative corpus and
 an agreed latency/resource target. The pending Astra review and live/client
 acceptance remain separate gates.
+
+## October 18 follow-up — 13C provider and ingestion
+
+The existing local embedding adapter sent every chunk string to Ollama in one
+request. In a deterministic adapter case with `pricing, support, pricing`, the
+baseline sent three texts (21 content characters). Request-local deduplication
+now sends two texts (14 content characters), then returns three vectors in the
+original order. This removes one third of submitted text in that case. The
+unit check covers result order and unexpected provider failure. The existing
+provider input ceiling still applies to the full original request. No
+cross-request cache, permission identity or invalidation path was added.
+
+The 13A chunker result remains the largest measured ingestion cost. A direct
+`SentenceSplitter` comparison on 100,000 synthetic characters took about 12.2
+seconds against 14.9 seconds with Markdown parsing, but used only repeated prose
+and bypassed heading metadata. No chunker change was retained because source
+heading behavior was not proven equivalent. Model loading, bounded batches,
+reranking and query expansion have no representative quality/latency/cost
+evidence; those changes were dropped. Actual Ollama work saved by deduplication
+depends on repeated text in a client document and is unknown.
+
+## October 18 follow-up — 13E staff bundle
+
+The same `apps/web` production build with `VITE_API_URL=/api/v1` before and after
+route splitting produced one initial JavaScript bundle of 360.37 kB (111.34 kB gzip) before and 294.76 kB
+(97.18 kB gzip) after. Initial JavaScript fell 65.61 kB (14.16 kB gzip).
+Page modules now load on navigation; the build reports separate page chunks up
+to 9.28 kB. These are artifact sizes, not network or render latency. The
+questionnaire detail remains bounded to 50 rows. Its five-second polling was
+not changed without a representative long-running job trace.

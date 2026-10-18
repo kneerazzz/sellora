@@ -26,6 +26,30 @@ describe('LocalEmbeddingProvider operation contract', () => {
     assert.deepEqual(received, ['search_query: pricing'])
     assert.equal(vectors[0]?.length, 768)
   })
+  it('embeds duplicate text once per request and restores input order', async () => {
+    let received: string[] = []
+    const first = Array.from({ length: 768 }, () => 0.1)
+    const second = Array.from({ length: 768 }, () => 0.2)
+    const provider = new LocalEmbeddingProvider({
+      embedModel: { getTextEmbeddings: async texts => {
+        received = texts
+        return [first, second]
+      } },
+    })
+    const vectors = await provider.embed(['pricing', 'support', 'pricing'])
+    assert.deepEqual(received, ['search_document: pricing', 'search_document: support'])
+    assert.deepEqual(vectors, [first, second, first])
+  })
+  it('does not expose provider error text', async () => {
+    const provider = new LocalEmbeddingProvider({
+      embedModel: { getTextEmbeddings: async () => { throw new Error('secret document content') } },
+    })
+    await assert.rejects(provider.embed(['pricing']), error => {
+      assert.ok(error instanceof Error)
+      assert.doesNotMatch(error.message, /secret document content/)
+      return true
+    })
+  })
 
   it('classifies malformed vectors as terminal validation failures', async () => {
     const provider = new LocalEmbeddingProvider({

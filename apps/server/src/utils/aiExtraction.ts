@@ -414,7 +414,6 @@ function parseRfpJsonOutput(rawResponse: string): RfpExtractionOutput {
   }
 
   if (parsed.questions && Array.isArray(parsed.questions)) {
-    console.log('DEBUG_GROQ_OUTPUT:', JSON.stringify(parsed.questions, null, 2))
     parsed.questions = parsed.questions.flat(Infinity).map((q: any) => {
       if (typeof q === 'string') return q
       if (typeof q === 'object' && q !== null) {

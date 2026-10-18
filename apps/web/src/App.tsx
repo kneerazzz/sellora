@@ -1,20 +1,25 @@
+import { lazy, Suspense } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider } from '@/context/AuthContext'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { GuestRoute, ProtectedRoute } from '@/components/ProtectedRoute'
-import { AcceptInvitePage, LoginPage, RegisterPage } from '@/pages/auth/AuthPages'
-import { ApiKeysPage } from '@/pages/ApiKeysPage'
-import { DashboardPage } from '@/pages/DashboardPage'
-import { DraftPage } from '@/pages/DraftPage'
-import { DraftsPage } from '@/pages/DraftsPage'
-import { ApprovedAnswersPage } from '@/pages/ApprovedAnswersPage'
-import { DocumentsPage } from '@/pages/DocumentsPage'
-import { TeamPage } from '@/pages/TeamPage'
-import { WorkflowRunsPage } from '@/pages/WorkflowRunsPage'
-import { UsagePage } from '@/pages/UsagePage'
-import { SettingsPage } from '@/pages/SettingsPage'
-import { QuestionnairesPage } from '@/pages/QuestionnairesPage'
 import { useAuth } from '@/context/AuthContext'
+
+const authPages = () => import('@/pages/auth/AuthPages')
+const AcceptInvitePage = lazy(() => authPages().then(module => ({ default: module.AcceptInvitePage })))
+const LoginPage = lazy(() => authPages().then(module => ({ default: module.LoginPage })))
+const RegisterPage = lazy(() => authPages().then(module => ({ default: module.RegisterPage })))
+const ApiKeysPage = lazy(() => import('@/pages/ApiKeysPage').then(module => ({ default: module.ApiKeysPage })))
+const DashboardPage = lazy(() => import('@/pages/DashboardPage').then(module => ({ default: module.DashboardPage })))
+const DraftPage = lazy(() => import('@/pages/DraftPage').then(module => ({ default: module.DraftPage })))
+const DraftsPage = lazy(() => import('@/pages/DraftsPage').then(module => ({ default: module.DraftsPage })))
+const ApprovedAnswersPage = lazy(() => import('@/pages/ApprovedAnswersPage').then(module => ({ default: module.ApprovedAnswersPage })))
+const DocumentsPage = lazy(() => import('@/pages/DocumentsPage').then(module => ({ default: module.DocumentsPage })))
+const TeamPage = lazy(() => import('@/pages/TeamPage').then(module => ({ default: module.TeamPage })))
+const WorkflowRunsPage = lazy(() => import('@/pages/WorkflowRunsPage').then(module => ({ default: module.WorkflowRunsPage })))
+const UsagePage = lazy(() => import('@/pages/UsagePage').then(module => ({ default: module.UsagePage })))
+const SettingsPage = lazy(() => import('@/pages/SettingsPage').then(module => ({ default: module.SettingsPage })))
+const QuestionnairesPage = lazy(() => import('@/pages/QuestionnairesPage').then(module => ({ default: module.QuestionnairesPage })))
 
 function ManagerRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuth()
@@ -25,7 +30,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <Routes>
+        <Suspense fallback={<p role="status">Loading page…</p>}><Routes>
           <Route
             path="/login"
             element={
@@ -69,7 +74,7 @@ export default function App() {
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        </Routes></Suspense>
       </AuthProvider>
     </BrowserRouter>
   )

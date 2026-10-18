@@ -23,3 +23,20 @@ Validation: server typecheck and web production build; source searches confirmed
 no remaining imports of the two deleted modules. Git retains the removed source
 and bootstrap for recovery. No routes, migrations, uploaded originals or records
 were removed.
+
+## October 18 critical-path review — 13D
+
+The RFP parser logged extracted question text through `DEBUG_GROQ_OUTPUT`.
+The local embedding adapter logged an unexpected SDK error and placed its raw
+message in the HTTP error. Both could expose document content, so those outputs
+were removed. An adapter test asserts the returned error omits secret text.
+Provider validation and the typed `ProviderOperationError` path remain intact.
+
+The touched embedding, document and retrieval paths were checked for broad
+`any`, unbounded loops, unsafe SQL, hidden fallbacks and DTO changes. The
+existing vector write uses `$executeRawUnsafe` with fixed SQL and bound `$1`/`$2`
+parameters; the retrieval query uses `Prisma.sql` parameters. Both stayed as-is.
+The ingestion loop is bounded by document limits; the embedding request remains
+bounded by `PROVIDER_INPUT_MAX_CHARS`. Parser normalization and model instance
+typing still contain `any`; a narrow type rewrite would not remove a measured
+maintenance defect here. No helper, route, DTO or import was removed.
