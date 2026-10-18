@@ -200,10 +200,15 @@ try {
     assert.ok(!JSON.stringify(result).includes('FOREIGN_SOURCE_MARKER'))
     return result.data
   }
-  const staff = ['ADMIN', 'MANAGER', 'REP'], managers = ['ADMIN', 'MANAGER'], mixed = [...staff, 'FULL_ACCESS', 'WEBHOOK_ONLY']
-  type Case = { method: string; route: string; allow: string[]; api?: boolean; status?: number;
+const staff = ['ADMIN', 'MANAGER', 'REP'], managers = ['ADMIN', 'MANAGER'], mixed = [...staff, 'FULL_ACCESS', 'WEBHOOK_ONLY']
+const questionnaireJob = await prisma.questionnaireJob.create({ data: { organizationId: org.id,
+  format: 'TEXT', status: 'COMPLETED', documentIds: [], rows: { create: { rowIndex: 0,
+    rowId: 'line-1', question: 'Fixture question?', status: 'ERROR', attemptCount: 1, errorCode: 'ANSWER_FAILED' } } } })
+type Case = { method: string; route: string; allow: string[]; api?: boolean; status?: number;
     body?: unknown; setup?: (caller: typeof admin) => Promise<{ route?: string; body?: unknown }> }
-  const cases: Case[] = [
+const cases: Case[] = [
+{ method: 'GET', route: '/questionnaires', allow: staff },
+{ method: 'GET', route: `/questionnaires/${questionnaireJob.id}`, allow: staff },
     { method: 'GET', route: '/users', allow: staff },
     { method: 'GET', route: '/users/me', allow: staff },
     { method: 'PATCH', route: '/users/profile', allow: staff, body: { title: 'Fixture' } },

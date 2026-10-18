@@ -47,7 +47,10 @@ try {
     content: 'rowId,question\nA,First?\nB,Second?\nC,Third?\n' }, 201)
   assert.equal(job.rows.length, 3)
   assert.deepEqual(job.rows.map((row: { rowId: string }) => row.rowId), ['A', 'B', 'C'])
+  assert.ok((await request('GET', '', ownerToken)).some((item: { id: string }) => item.id === job.id))
+  assert.ok(!(await request('GET', '', foreignToken)).some((item: { id: string }) => item.id === job.id))
   await request('GET', `/${job.id}`, foreignToken, undefined, 404)
+  await request('GET', `/${job.id}/export`, foreignToken, undefined, 404)
   const answer = (value: string) => ({ answer: value, refused: false, confidence: 'LOW' as const,
     citations: [], reviewRequired: true as const, aiInteractionId: 'fixture-answer' })
   let secondStarted!: () => void
@@ -79,17 +82,37 @@ try {
   saved = await questionnairesService.getJob(job.id, org.id)
   assert.equal(saved.rows[1].answer, 'Recovered worker result')
   assert.equal(saved.rows[0].answer, 'Old worker result')
+  assert.ok(saved.rows.every(row => row.draftId && row.draft?.currentRevisionId))
+  assert.equal(saved.rows[0].draft?.reviewStatus, 'REQUIRED')
+  const reviewDraft = await request('GET', `/../drafts/${saved.rows[0].draftId}`, ownerToken)
+  assert.equal(reviewDraft.revisions[0].content, 'Old worker result')
+  await request('POST', `/../drafts/${saved.rows[0].draftId}/approvals`, ownerToken,
+    { revisionId: saved.rows[0].draft?.currentRevisionId })
+  assert.equal((await questionnairesService.getJob(job.id, org.id)).rows[0].draft?.reviewStatus, 'APPROVED')
+  await request('POST', `/../drafts/${saved.rows[0].draftId}/revisions`, ownerToken,
+    { expectedRevisionId: saved.rows[0].draft?.currentRevisionId, content: 'Reviewed answer revision' })
+  const edited = (await questionnairesService.getJob(job.id, org.id)).rows[0]
+  assert.equal(edited.draft?.currentRevision?.content, 'Reviewed answer revision')
+  assert.equal(edited.draft?.reviewStatus, 'REQUIRED')
+  const editedExport = await fetch(`${base}/${job.id}/export`, { headers: {
+    authorization: `Bearer ${ownerToken}` }, signal: AbortSignal.timeout(20_000) })
+  assert.match(await editedExport.text(), /"Reviewed answer revision"/)
 
   const failed = await request('POST', '', ownerToken, { format: 'TEXT', content: 'Retry this?' }, 201)
   await questionnairesService.processNext({ answerQuestion: async () => { throw new Error('synthetic failure') } })
   saved = await questionnairesService.getJob(failed.id, org.id)
   assert.equal(saved.rows[0].status, 'ERROR')
   assert.equal(saved.rows[0].attemptCount, 1)
+  const errorExport = await fetch(`${base}/${failed.id}/export`, { headers: {
+    authorization: `Bearer ${ownerToken}` }, signal: AbortSignal.timeout(20_000) })
+  assert.equal(errorExport.status, 200)
+  assert.match(await errorExport.text(), /"ERROR","","","","REQUIRED","NO_SOURCES","","ANSWER_FAILED"/)
   await request('POST', `/${failed.id}/rows/0/retry`, ownerToken)
   await questionnairesService.processNext({ answerQuestion: async () => answer('Retried successfully') })
   saved = await questionnairesService.getJob(failed.id, org.id)
   assert.equal(saved.rows[0].status, 'SUCCESS')
   assert.equal(saved.rows[0].attemptCount, 2)
+  assert.ok(saved.rows[0].draftId)
   await request('POST', `/${failed.id}/rows/0/retry`, ownerToken, undefined, 409)
 
   const exhausted = await request('POST', '', ownerToken, { format: 'TEXT', content: 'Exhaust retries?' }, 201)
@@ -112,6 +135,10 @@ try {
   const cancelled = await request('POST', `/${cancel.id}/cancel`, ownerToken)
   assert.equal(cancelled.status, 'CANCELLED')
   assert.deepEqual(cancelled.rows.map((row: { status: string }) => row.status), ['CANCELLED', 'CANCELLED'])
+  const cancelledExport = await fetch(`${base}/${cancel.id}/export`, { headers: {
+    authorization: `Bearer ${ownerToken}` }, signal: AbortSignal.timeout(20_000) })
+  assert.equal(cancelledExport.status, 200)
+  assert.equal((await cancelledExport.text()).match(/"CANCELLED"/g)?.length, 2)
   const active = await request('POST', '', ownerToken, { format: 'TEXT', content: 'In flight?\nLater?' }, 201)
   let activeStarted!: () => void
   let activeRelease!: () => void
@@ -139,6 +166,36 @@ try {
   const usage = await prisma.usageTrace.findFirst({ where: { organizationId: org.id,
     requestId: `questionnaire:${traced.id}:0:1`, operation: 'grounded_answer' } })
   assert.ok(usage?.reservationId)
+  const invalidSource = await request('POST', '', ownerToken, { format: 'TEXT', content: 'Untrusted source?' }, 201)
+  await questionnairesService.processNext({ answerQuestion: async () => ({ ...answer('Untrusted answer'),
+    citations: [{ documentId: 'missing', documentName: 'Missing', filename: 'missing.txt',
+      versionId: 'missing', chunkId: 'missing', chunkIndex: 0, pageNumber: null,
+      headingPath: [], sectionTitle: null, score: 1, snippet: 'Missing' }],
+  }) })
+  const invalidRow = (await questionnairesService.getJob(invalidSource.id, org.id)).rows[0]
+  assert.equal(invalidRow.status, 'ERROR')
+  assert.equal(invalidRow.errorCode, 'SOURCE_UNAVAILABLE')
+  assert.equal(invalidRow.draftId, null)
+  const csvJob = await request('POST', '', ownerToken, { format: 'CSV',
+    content: 'rowId,question\n"=1+1","Same\nquestion?"\n"@test","Same\nquestion?"\n' }, 201)
+  let answered = 0
+  await questionnairesService.processNext({ answerQuestion: async () => {
+    if (++answered === 1) return answer('+formula')
+    throw new Error('synthetic partial failure')
+  } })
+  const partial = await questionnairesService.getJob(csvJob.id, org.id)
+  assert.equal(partial.rows[0].status, 'SUCCESS')
+  assert.equal(partial.rows[1].status, 'ERROR')
+  const response = await fetch(`${base}/${csvJob.id}/export?includeSources=true`, {
+    headers: { authorization: `Bearer ${ownerToken}` }, signal: AbortSignal.timeout(20_000),
+  })
+  assert.equal(response.status, 200)
+  const csv = await response.text()
+  assert.match(csv, /"'=1\+1","Same\nquestion\?"/)
+  assert.match(csv, /"'@test","Same\nquestion\?"/)
+  assert.match(csv, /"'\+formula"/)
+  assert.equal(csv.split('\r\n').filter(line => line.startsWith('"0"') || line.startsWith('"1"')).length, 2)
+  assert.equal((await questionnairesService.getJob(csvJob.id, org.id)).rows[0].draftId, partial.rows[0].draftId)
   console.log('PASS questionnaire HTTP bounds/tenant, persisted rows, expired lease recovery, retry cap, cancellation and real local reservation')
 } finally {
   await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()))

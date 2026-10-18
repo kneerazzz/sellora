@@ -11,9 +11,22 @@ export const questionnairesRouter = Router()
 const idParams = z.object({ id: z.string().cuid() })
 
 questionnairesRouter.use(authenticate, authorize('ADMIN', 'MANAGER', 'REP'))
+questionnairesRouter.get('/', asyncHandler(async (req, res) => {
+  const jobs = await questionnairesService.listJobs(req.user.organizationId)
+  res.json(ApiResponse.ok('Questionnaires fetched', jobs))
+}))
 questionnairesRouter.post('/', validate(z.object({ body: questionnaireImportSchema })), asyncHandler(async (req, res) => {
   const job = await questionnairesService.createJob(req.body, req.user.organizationId)
   res.status(201).json(ApiResponse.created('Questionnaire queued', job))
+}))
+questionnairesRouter.get('/:id/export', validate(z.object({ params: idParams,
+  query: z.object({ includeSources: z.enum(['true', 'false']).optional() }) })), asyncHandler(async (req, res) => {
+  const csv = await questionnairesService.exportJob(req.params.id as string, req.user.organizationId,
+    req.query.includeSources === 'true')
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+  res.setHeader('Cache-Control', 'no-store')
+  res.setHeader('Content-Disposition', `attachment; filename="questionnaire-${req.params.id}.csv"`)
+  res.send(csv)
 }))
 questionnairesRouter.get('/:id', validate(z.object({ params: idParams })), asyncHandler(async (req, res) => {
   const job = await questionnairesService.getJob(req.params.id as string, req.user.organizationId)

@@ -255,6 +255,7 @@ model Draft {
   currentRevision      DraftRevision?        @relation("CurrentDraftRevision", fields: [currentRevisionId, id, organizationId], references: [id, draftId, organizationId], onDelete: NoAction, onUpdate: NoAction)
   approvals            DraftApproval[]
   exportRequests       DraftExportRequest[]
+  questionnaireRow     QuestionnaireRow?
   reusedApprovedAnswerId String?
   reusedApprovedAnswerRevisionId String?
   reusedApprovedAnswer ApprovedAnswer? @relation("ReusedApprovedAnswer", fields: [reusedApprovedAnswerId, organizationId], references: [id, organizationId], onDelete: Restrict)
@@ -862,8 +863,10 @@ model QuestionnaireRow {
   confidence   ConfidenceLevel?
   citations    Json @default("[]")
   errorCode    String?
+  draftId      String? @unique
   updatedAt    DateTime @updatedAt
   job          QuestionnaireJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  draft        Draft? @relation(fields: [draftId], references: [id], onDelete: Restrict)
 
   @@unique([jobId, rowIndex])
   @@index([jobId, status])

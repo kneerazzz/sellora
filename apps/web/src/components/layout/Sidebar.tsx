@@ -17,6 +17,7 @@ export const navItems = [
   { to: '/draft', label: 'Drafts', icon: MessageSquare },
   { to: '/documents', label: 'Knowledge', icon: FileText },
   { to: '/approved-answers', label: 'Approved answers', icon: BookOpenCheck },
+  { to: '/questionnaires', label: 'Questionnaires', icon: FileText },
   { to: '/workflow-runs', label: 'Activity', icon: Workflow },
   { to: '/settings', label: 'Settings', icon: Settings },
 ]

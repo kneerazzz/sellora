@@ -5,19 +5,47 @@ import { ApiError } from '../../utils/apiError'
 import { groundedAnswersService } from '../groundedAnswers/groundedAnswers.service'
 import { WorkloadAdmissionError } from '../usage/workloadReservations.service'
 import { parseQuestionnaireImport, type QuestionnaireImport } from './questionnaireImport'
+import { draftsService, isEffectiveDraftApproval } from '../drafts/drafts.service'
+import { questionnaireCsv } from './questionnaireCsv'
 
 const leaseMs = 60_000
 const maxRowAttempts = 2
 type Answer = Awaited<ReturnType<typeof groundedAnswersService.answerQuestion>>
 type Claim = { id: string; organizationId: string; leaseOwner: string; leaseVersion: number; documentIds: string[] }
+const rowInclude = { draft: { select: { id: true, currentRevisionId: true, reviewStatus: true,
+  currentRevision: { select: { revisionNumber: true, content: true } } } } } as const
 
 async function getJob(id: string, organizationId: string) {
   const job = await prisma.questionnaireJob.findFirst({
     where: { id, organizationId },
-    include: { rows: { orderBy: { rowIndex: 'asc' } } },
+    include: { rows: { orderBy: { rowIndex: 'asc' }, include: rowInclude } },
   })
   if (!job) throw ApiError.notFound('Questionnaire job not found')
   return job
+}
+
+async function listJobs(organizationId: string) {
+  return prisma.questionnaireJob.findMany({ where: { organizationId }, orderBy: { createdAt: 'desc' },
+    take: 50, select: { id: true, createdAt: true, format: true, status: true,
+      _count: { select: { rows: true } } } })
+}
+
+async function exportJob(id: string, organizationId: string, includeSources: boolean) {
+  const job = await getJob(id, organizationId)
+  const rows = await Promise.all(job.rows.map(async row => {
+    const draft = row.draftId ? await draftsService.getDraftById(row.draftId, organizationId) : null
+    const revision = draft?.revisions?.find(item => item.id === draft.currentRevisionId)
+    const sources = revision?.sources ?? []
+    const sourceStatus = !sources.length ? 'NO_SOURCES' : sources.some(item => item.availability === 'UNAVAILABLE')
+      ? 'UNAVAILABLE' : sources.some(item => item.availability === 'STALE') ? 'STALE' : 'CURRENT'
+    const reviewStatus = draft?.archivedAt ? 'ARCHIVED' : draft?.id && revision?.id &&
+      await isEffectiveDraftApproval(prisma, draft.id, revision.id, organizationId) ? 'APPROVED' : 'REQUIRED'
+    return [row.rowIndex, row.rowId, row.question, row.status, revision?.content ?? row.answer ?? '',
+      draft?.id ?? '', revision?.id ?? '', reviewStatus, sourceStatus,
+      includeSources && sourceStatus === 'CURRENT' ? sources.map(item => `${item.documentId}/${item.versionId}/${item.chunkId}`).join('; ') : '',
+      row.errorCode ?? '']
+  }))
+  return questionnaireCsv(rows)
 }
 
 async function createJob(input: QuestionnaireImport, organizationId: string) {
@@ -31,7 +59,7 @@ async function createJob(input: QuestionnaireImport, organizationId: string) {
       organizationId, format: imported.format, documentIds: ids,
       rows: { create: imported.rows.map((row, rowIndex) => ({ ...row, rowIndex })) },
     },
-    include: { rows: { orderBy: { rowIndex: 'asc' } } },
+    include: { rows: { orderBy: { rowIndex: 'asc' }, include: rowInclude } },
   })
 }
 
@@ -138,14 +166,18 @@ async function processNext(params: {
       })
       if (!row) break
       let result: { status: 'SUCCESS' | 'REFUSAL' | 'ERROR'; answer: string | null; confidence: Answer['confidence'] | null; citations: Prisma.InputJsonValue; errorCode: string | null }
+      let grounded: Answer | null = null
       try {
         const answer = await (params.answerQuestion ?? ((question, documentIds, requestId) => groundedAnswersService.answerQuestion(
           { question, documentIds }, { organizationId: claim.organizationId, signal: abort.signal, requestId }
         )))(row.question, claim.documentIds.length ? claim.documentIds : undefined, `questionnaire:${claim.id}:${row.rowIndex}:${row.attemptCount}`)
         if (typeof answer?.answer !== 'string' || !answer.answer.trim() || typeof answer.refused !== 'boolean' ||
-          !['LOW', 'MEDIUM', 'HIGH'].includes(answer.confidence) || !Array.isArray(answer.citations)) throw new Error('Malformed answer')
+          !['LOW', 'MEDIUM', 'HIGH'].includes(answer.confidence) || !Array.isArray(answer.citations) ||
+          !answer.citations.every(citation => citation && typeof citation.documentId === 'string' &&
+            typeof citation.versionId === 'string' && typeof citation.chunkId === 'string')) throw new Error('Malformed answer')
         result = { status: answer.refused ? 'REFUSAL' : 'SUCCESS', answer: answer.answer,
           confidence: answer.confidence, citations: answer.citations as Prisma.InputJsonValue, errorCode: null }
+        grounded = answer
       } catch (error) {
         if (abort.signal.aborted) break
         if (error instanceof WorkloadAdmissionError) {
@@ -157,7 +189,37 @@ async function processNext(params: {
         }
         result = { status: 'ERROR', answer: null, confidence: null, citations: [], errorCode: 'ANSWER_FAILED' }
       }
-      const saved = await withClaim(claim, tx => tx.questionnaireRow.update({ where: { id: row.id }, data: result }))
+      const saved = await withClaim(claim, async tx => {
+        if (grounded) {
+          const sources = [...new Map(grounded.citations.map(citation => [citation.chunkId, citation])).values()]
+          if (sources.length) {
+            const chunks = await tx.documentChunk.findMany({ where: { id: { in: sources.map(source => source.chunkId) },
+              document: { organizationId: claim.organizationId } }, select: { id: true, documentId: true, versionId: true } })
+            if (chunks.length !== sources.length || chunks.some(chunk => {
+              const source = sources.find(item => item.chunkId === chunk.id)
+              return !source || source.documentId !== chunk.documentId || source.versionId !== chunk.versionId
+            })) return tx.questionnaireRow.update({ where: { id: row.id }, data: {
+              status: 'ERROR', answer: null, confidence: null, citations: [], errorCode: 'SOURCE_UNAVAILABLE',
+            } })
+          }
+          const draft = await tx.draft.create({ data: { organizationId: claim.organizationId,
+            authorId: null, idempotencyKey: `questionnaire:${claim.id}:${row.rowIndex}`,
+            requestFingerprint: `questionnaire:${row.id}`, question: row.question,
+            requestedDocumentIds: claim.documentIds } })
+          const revision = await tx.draftRevision.create({ data: { draftId: draft.id,
+            organizationId: claim.organizationId, authorId: null, revisionNumber: 1,
+            content: grounded.answer, origin: 'GENERATED', isRefusal: grounded.refused,
+            aiInteractionId: grounded.aiInteractionId } })
+          if (sources.length) await tx.draftRevisionSource.createMany({ data: sources.map((citation, ordinal) => ({
+            draftRevisionId: revision.id, organizationId: claim.organizationId, ordinal,
+            documentId: citation.documentId, versionId: citation.versionId, chunkId: citation.chunkId,
+          })) })
+          await tx.draft.update({ where: { id: draft.id }, data: { currentRevisionId: revision.id,
+            concurrencyToken: 1, processingStatus: grounded.refused ? 'REFUSED' : 'COMPLETED' } })
+          return tx.questionnaireRow.update({ where: { id: row.id }, data: { ...result, draftId: draft.id } })
+        }
+        return tx.questionnaireRow.update({ where: { id: row.id }, data: result })
+      })
       if (!saved) break
     }
   } finally {
@@ -167,4 +229,4 @@ async function processNext(params: {
   return getJob(claim.id, claim.organizationId)
 }
 
-export const questionnairesService = { createJob, getJob, cancelJob, retryRow, processNext }
+export const questionnairesService = { createJob, getJob, listJobs, exportJob, cancelJob, retryRow, processNext }

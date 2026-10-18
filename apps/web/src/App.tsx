@@ -13,6 +13,7 @@ import { TeamPage } from '@/pages/TeamPage'
 import { WorkflowRunsPage } from '@/pages/WorkflowRunsPage'
 import { UsagePage } from '@/pages/UsagePage'
 import { SettingsPage } from '@/pages/SettingsPage'
+import { QuestionnairesPage } from '@/pages/QuestionnairesPage'
 import { useAuth } from '@/context/AuthContext'
 
 function ManagerRoute({ children }: { children: React.ReactNode }) {
@@ -54,6 +55,8 @@ export default function App() {
             <Route path="draft" element={<DraftsPage />} />
             <Route path="draft/:id" element={<DraftPage />} />
             <Route path="approved-answers" element={<ApprovedAnswersPage />} />
+            <Route path="questionnaires" element={<QuestionnairesPage />} />
+            <Route path="questionnaires/:id" element={<QuestionnairesPage />} />
             <Route path="documents" element={<DocumentsPage />} />
             <Route path="workflow-runs" element={<WorkflowRunsPage />} />
             <Route path="settings" element={<SettingsPage />} />

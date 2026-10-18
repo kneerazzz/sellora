@@ -142,6 +142,14 @@ try {
     return envelope.data
   }
   const draft = await apiRequest('POST', '/drafts', { idempotencyKey: 'draft-browser-seed', question: 'What is the refund policy?', documentIds: [document.id] })
+  const questionnaire = await apiRequest('POST', '/questionnaires', { format: 'CSV',
+    content: 'rowId,question\nA,What is the refund policy?\nB,What is the refund policy?\n' })
+  const { questionnairesService } = await import('../../src/modules/questionnaires/questionnaires.service')
+  await questionnairesService.processNext()
+  const currentExport = await fetch(`${origin}/api/v1/questionnaires/${questionnaire.id}/export?includeSources=true`,
+    { headers: { authorization: `Bearer ${repToken}` } })
+  assert.equal(currentExport.status, 200)
+  assert.ok((await currentExport.text()).includes(chunk.id))
   reviewEdit = async () => { const answers = await apiRequest('GET', '/approved-answers', undefined); assert.equal(answers.length, 1); await apiRequest('POST', `/approved-answers/${answers[0].id}/revisions`, { expectedRevisionId: answers[0].currentRevisionId, content: 'Reviewed library correction.' }) }
   expireSession = async () => { await prisma!.refreshToken.updateMany({ where: { userId: manager.id }, data: { isRevoked: true } }) }
   retireSource = async () => { await prisma!.documentVersion.update({ where: { id: version.id }, data: { status: 'RETIRED' } }); await prisma!.document.update({ where: { id: document.id }, data: { activeVersionId: null } }) }
@@ -175,6 +183,17 @@ try {
         if (sessionStorage.getItem('stage') === 'rep-settings') {
           await waitFor(() => location.pathname === '/settings');
           if ([...document.querySelectorAll('#root a')].some(node => node.textContent.trim() === 'API keys')) throw new Error('REP sees API keys');
+          sessionStorage.setItem('stage', 'questionnaire'); location.href = '/questionnaires/${questionnaire.id}'; return;
+        }
+        if (sessionStorage.getItem('stage') === 'questionnaire') {
+          await waitFor(() => document.querySelector('#root').innerText.includes('2/2 rows finished'));
+          if ([...document.querySelectorAll('#root a')].filter(node => node.textContent.trim() === 'Review exact draft and sources').length !== 2) throw new Error('Questionnaire duplicate rows lost');
+          sessionStorage.setItem('stage', 'questionnaire-draft'); click('Review exact draft and sources');
+          await waitFor(() => location.pathname.startsWith('/draft/')); location.reload(); return;
+        }
+        if (sessionStorage.getItem('stage') === 'questionnaire-draft') {
+          await waitFor(() => document.querySelector('#draft-reply'));
+          if (!document.querySelector('#root').innerText.includes('Refunds are allowed within thirty days.')) throw new Error('Questionnaire review draft missing');
           await fetch('/__result', { method: 'POST', body: JSON.stringify({ ok: true }) }); return;
         }
         if (sessionStorage.getItem('stage') === 'reload') {
@@ -293,6 +312,7 @@ try {
   const reused = await prisma.draft.findFirstOrThrow({ where: { organizationId: organization.id, reusedApprovedAnswerId: answer.id } })
   assert.equal(reused.reviewStatus, 'REQUIRED')
   assert.equal(reused.reusedApprovedAnswerRevisionId, answer.currentRevisionId)
+  assert.equal(await prisma.questionnaireRow.count({ where: { jobId: questionnaire.id, draftId: { not: null } } }), 2)
   const deniedApproval = await fetch(`${origin}/api/v1/drafts/${draft.id}/approvals`, { method: 'POST', headers: { authorization: `Bearer ${repToken}`, 'content-type': 'application/json' }, body: JSON.stringify({ revisionId: saved.currentRevisionId }) })
   assert.equal(deniedApproval.status, 403)
   const deniedKeys = await fetch(`${origin}/api/v1/api-keys`, { headers: { authorization: `Bearer ${repToken}` } })
@@ -302,6 +322,12 @@ try {
   const retiredSource = await apiRequest('GET', `/documents/${document.id}/versions/${version.id}/source?chunkId=${chunk.id}`, undefined)
   assert.equal(retiredSource.availability, 'STALE')
   assert.deepEqual(retiredSource.chunks, [])
+  const staleExport = await fetch(`${origin}/api/v1/questionnaires/${questionnaire.id}/export?includeSources=true`,
+    { headers: { authorization: `Bearer ${repToken}` } })
+  assert.equal(staleExport.status, 200)
+  const staleCsv = await staleExport.text()
+  assert.ok(staleCsv.includes('"STALE"'))
+  assert.ok(!staleCsv.includes(chunk.id))
   console.log('PASS Firefox 10C/10D real API and disposable SQL: navigation, upload, draft/source/approval/copy/reopen, failure paths, two tabs, role denial, mobile focus')
 } finally {
   clearTimeout(timeout)
