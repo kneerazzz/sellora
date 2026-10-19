@@ -9,7 +9,11 @@ Sellora uses a company's documents to draft answers to buyer questions and extra
 
 The user wants to sell it as a **managed automation service for small companies**: paid setup plus ongoing maintenance. No prospect or specific industry is identified. The working first offer is a staff-reviewed, sourced reply-drafting workflow, followed by one email integration. Small B2B software/IT-service teams are an assistant recommendation, not validated demand.
 
+[Product direction and later experiments](docs/PRODUCT_IDEAS.md) records the user's broader multi-channel vision, frontend improvement request, and future RAG comparison without changing the first offer.
+
 The goal is to try for one paid engagement in roughly two months; the original planning window ends **2026-11-25**. The user's **$1,000 setup + $500–660/month** idea is provisional. Costs, support effort, account ownership and willingness to pay remain unmeasured. Do not promise unlimited usage or assume all API/tool bills fit the fee.
+
+On **2026-10-19**, the user restated a roughly two-month first-client target and proposed an honest prototype demo video for buyer conversations. That target is not a validated sale forecast; see [product direction](docs/PRODUCT_IDEAS.md).
 
 ## Current state
 
