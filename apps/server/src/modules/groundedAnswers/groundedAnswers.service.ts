@@ -71,13 +71,20 @@ export function createGroundedAnswersService(overrides: Partial<typeof defaultDe
           return await handleRefusal(input.question, queryVector, context)
         }
 
-        const rankedResults = await rerank<VectorSearchResult>({
-          items: eligibleMatches.map((m) => ({ item: m, score: m.score })),
-          question: input.question,
-          getText: (m) => m.text,
-          limit: maxCitations,
-          operation,
-        })
+        let rankedResults
+        try {
+          rankedResults = await rerank<VectorSearchResult>({
+            items: eligibleMatches.map((m) => ({ item: m, score: m.score })),
+            question: input.question,
+            getText: (m) => m.text,
+            limit: maxCitations,
+            operation,
+          })
+        } catch (error) {
+          if (!(error instanceof ProviderOperationError) || error.category !== 'transport') throw error
+          console.error('Grounded answer reranker failed; using retrieved order', { category: error.category })
+          rankedResults = eligibleMatches.slice(0, maxCitations).map(item => ({ item, combinedScore: item.score }))
+        }
 
         const topChunks = rankedResults.map((r) => r.item)
 

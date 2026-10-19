@@ -45,4 +45,6 @@ A seven-question **local retrieval-only** probe found the expected page at rank 
 
 Two user-supplied domain questions exposed another gap. For “How does Cloudflare host domains?” the top result was a Cloudflare Access page. For “How can I buy a domain from Cloudflare?” the top result was an R2 public-bucket page. The current lexical gate marked 19 of 30 retrieved chunks eligible for **each** question, although none of the 500 selected source pages explains domain purchase or Cloudflare Registrar. This is a false-positive evidence signal, not a verified generated hallucination: no answer model was called. A later quality change should check whether the retrieved passages answer the actual intent, especially before generation, and add supported domain docs only when they belong in the test corpus.
 
+The broader [25-question local evaluation](evidence/CLOUDFLARE_QA_EVAL.md) records an answer key and per-question retrieval results for follow-up testing.
+
 No model or RAG code change is authorized by this suggestion record. Compare future candidates with a larger labeled set before choosing one.

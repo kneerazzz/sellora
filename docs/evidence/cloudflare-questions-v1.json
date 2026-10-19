@@ -1,0 +1,32 @@
+{
+  "corpusRevision": "d723a5f45258449d98bbac8c9dd3e6dba4cf6ccd",
+  "organizationSlug": "sellora",
+  "tag": "cloudflare-test-20261019",
+  "cases": [
+    { "id": "d1-paid-size", "question": "What is the maximum size of one D1 database on Workers Paid?", "expectedAnswer": "10 GB.", "expectedSource": "d1/platform/limits.mdx" },
+    { "id": "d1-free-size", "question": "How large can one D1 database be on the Free plan?", "expectedAnswer": "500 MB.", "expectedSource": "d1/platform/limits.mdx" },
+    { "id": "d1-parameters", "question": "How many bound parameters may a D1 query have?", "expectedAnswer": "100.", "expectedSource": "d1/platform/limits.mdx" },
+    { "id": "d1-index-refresh", "question": "Must I manually update a D1 index after changing rows?", "expectedAnswer": "No. D1 updates indexes automatically when indexed rows change.", "expectedSource": "d1/best-practices/use-indexes.mdx" },
+    { "id": "d1-time-travel", "question": "How long is D1 Time Travel available on the Free plan?", "expectedAnswer": "7 days.", "expectedSource": "d1/platform/limits.mdx" },
+    { "id": "do-sql", "question": "Can a SQLite-backed Durable Object execute SQL queries?", "expectedAnswer": "Yes, through its storage SQL API, including sql.exec().", "expectedSource": "durable-objects/api/sqlite-storage-api.mdx" },
+    { "id": "do-object-storage", "question": "What is the storage limit per SQLite-backed Durable Object?", "expectedAnswer": "10 GB per object.", "expectedSource": "durable-objects/platform/limits.mdx" },
+    { "id": "do-classes", "question": "How many Durable Object classes are allowed on Workers Paid?", "expectedAnswer": "500 per account.", "expectedSource": "durable-objects/platform/limits.mdx" },
+    { "id": "r2-consistency", "question": "Does R2 provide read-after-write consistency for objects?", "expectedAnswer": "Yes. Completed object writes are immediately visible globally on direct R2 reads.", "expectedSource": "r2/reference/consistency.mdx" },
+    { "id": "r2-paraphrase", "question": "Are newly uploaded files instantly visible when downloaded?", "expectedAnswer": "Direct R2 reads see a completed upload immediately; a cached custom domain can still serve stale content or a cached 404.", "expectedSource": "r2/reference/consistency.mdx" },
+    { "id": "r2-cache-404", "question": "Can a cached 404 remain after an object is uploaded to R2?", "expectedAnswer": "Yes, on a custom domain with caching until the cache expires or is purged.", "expectedSource": "r2/reference/consistency.mdx" },
+    { "id": "r2-object-size", "question": "What is the maximum size of one R2 object?", "expectedAnswer": "5 TiB per object, with the documented multipart upload limit slightly lower.", "expectedSource": "r2/platform/limits.mdx" },
+    { "id": "r2-key-length", "question": "How long can an R2 object key be?", "expectedAnswer": "1,024 bytes.", "expectedSource": "r2/platform/limits.mdx" },
+    { "id": "r2-test-domain", "question": "Is an r2.dev public bucket endpoint intended for production traffic?", "expectedAnswer": "No. It is for testing and has a variable rate limit; use a custom domain for production.", "expectedSource": "r2/platform/limits.mdx" },
+    { "id": "workers-body", "question": "What is the request body size limit for Workers on a Cloudflare Free account?", "expectedAnswer": "100 MB; the limit depends on the Cloudflare account plan.", "expectedSource": "workers/platform/limits.mdx" },
+    { "id": "workers-basic-auth", "question": "Is the Workers HTTP Basic Authentication example production ready?", "expectedAnswer": "No. The sample warns it is not suitable for production; use HTTPS and consider Cloudflare Access.", "expectedSource": "workers/examples/basic-auth.mdx" },
+    { "id": "workers-cache-methods", "question": "Does Workers Caching cache POST requests by default?", "expectedAnswer": "No. Only GET and HEAD are cached; POST invokes the Worker.", "expectedSource": "workers/cache/limitations.mdx" },
+    { "id": "workers-rpc-cache", "question": "Do custom RPC methods use Workers Caching?", "expectedAnswer": "No. Custom RPC methods bypass Workers Caching.", "expectedSource": "workers/cache/limitations.mdx" },
+    { "id": "workers-rate-period", "question": "Which period values does a Workers Rate Limiting binding support?", "expectedAnswer": "10 or 60 seconds.", "expectedSource": "workers/runtime-apis/bindings/rate-limit.mdx" },
+    { "id": "workers-cpu", "question": "What is the default CPU time per HTTP request on Workers Paid?", "expectedAnswer": "30 seconds by default; it can be configured up to 5 minutes.", "expectedSource": "workers/platform/limits.mdx" },
+    { "id": "missing-registrar", "question": "How can I buy a domain from Cloudflare?", "expectedAnswer": null, "expectedSource": null },
+    { "id": "missing-domain-hosting", "question": "How does Cloudflare host domains?", "expectedAnswer": "Ask whether the user means registration, DNS, Pages, Workers, or R2; the corpus only covers some custom-domain uses.", "expectedSource": null, "expectedOutcome": "CLARIFY" },
+    { "id": "missing-refund", "question": "What is Sellora's refund policy?", "expectedAnswer": null, "expectedSource": null },
+    { "id": "missing-employee-count", "question": "How many employees does Sellora have?", "expectedAnswer": null, "expectedSource": null },
+    { "id": "missing-registrar-idn", "question": "Can I register an emoji domain with Cloudflare Registrar?", "expectedAnswer": null, "expectedSource": null }
+  ]
+}

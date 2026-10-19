@@ -15,7 +15,7 @@ const source = {
   versionId: 'version-1', sourceHeadingPath: [], sourceSectionTitle: null,
   documentId: 'document-1', displayName: 'Security guide', filename: 'security.md', score: 2 / 61,
 }
-function fixture(options: { matches?: typeof source[]; text?: string; outage?: boolean | string } = {}) {
+function fixture(options: { matches?: typeof source[]; text?: string; outage?: boolean | string; rerankerOutage?: boolean } = {}) {
   const searches: any[] = [], generations: any[] = [], embeddings: string[][] = [], embeddingOptions: any[] = [], rerankOperations: any[] = [], localQueries: any[] = []
   const service = createGroundedAnswersService({
     withWorkloadReservation: async ({ work }) => work({ markAttempted() {}, markRefused() {}, usageTraceId: 'trace-test' }),
@@ -35,6 +35,7 @@ function fixture(options: { matches?: typeof source[]; text?: string; outage?: b
     },
     rerank: async ({ items, limit, operation }) => {
       rerankOperations.push(operation)
+      if (options.rerankerOutage) throw new ProviderOperationError('local model unavailable', 'transport', [], false)
       return items.slice(0, limit).map(({ item }) => ({ item, combinedScore: 25 }))
     },
     callLlm: async (params) => {
@@ -101,6 +102,20 @@ describe('grounded answers with offline dependencies', () => {
     assert.equal(r.refused, true)
     assert.deepEqual(r.citations, [])
     assert.equal(f.generations.length, 0)
+  })
+  it('uses eligible retrieval results when the local reranker is unavailable', async () => {
+    const f = fixture({ rerankerOutage: true })
+    const originalError = console.error
+    console.error = () => {}
+    try {
+      const result = await f.service.answerQuestion({ question: 'Do you offer SAML SSO?' }, { organizationId: 'org-a' })
+      assert.equal(result.refused, false)
+      assert.equal(result.citations[0]?.chunkId, 'chunk-1')
+      assert.equal(f.generations.length, 1)
+      assert.equal(f.localQueries.length, 0)
+    } finally {
+      console.error = originalError
+    }
   })
   it('refuses an empty library', async () => {
     const f = fixture({ matches: [] })
