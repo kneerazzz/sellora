@@ -123,12 +123,17 @@ try {
   assert.equal((await questionnairesService.getJob(exhausted.id, org.id)).rows[0].attemptCount, 2)
 
   const paused = await request('POST', '', ownerToken, { format: 'TEXT', content: 'Wait for allowance?' }, 201)
+  const waiting = await request('POST', '', ownerToken, { format: 'TEXT', content: 'Do not starve me?' }, 201)
   await questionnairesService.processNext({ answerQuestion: async () => {
     throw new WorkloadAdmissionError('Synthetic pause', 'paused')
   } })
   saved = await questionnairesService.getJob(paused.id, org.id)
   assert.equal(saved.status, 'QUEUED')
   assert.equal(saved.rows[0].attemptCount, 0)
+  const waitingResult = await questionnairesService.processNext({ answerQuestion: async () => answer('Queue progressed') })
+  assert.equal(waitingResult?.id, waiting.id)
+  assert.equal(waitingResult?.status, 'COMPLETED')
+  assert.equal((await questionnairesService.getJob(paused.id, org.id)).status, 'QUEUED')
   await request('POST', `/${paused.id}/cancel`, ownerToken)
 
   const cancel = await request('POST', '', ownerToken, { format: 'TEXT', content: 'One?\nTwo?' }, 201)

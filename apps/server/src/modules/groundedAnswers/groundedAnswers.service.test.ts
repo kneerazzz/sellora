@@ -15,7 +15,7 @@ const source = {
   versionId: 'version-1', sourceHeadingPath: [], sourceSectionTitle: null,
   documentId: 'document-1', displayName: 'Security guide', filename: 'security.md', score: 2 / 61,
 }
-function fixture(options: { matches?: typeof source[]; text?: string; outage?: boolean } = {}) {
+function fixture(options: { matches?: typeof source[]; text?: string; outage?: boolean | string } = {}) {
   const searches: any[] = [], generations: any[] = [], embeddings: string[][] = [], embeddingOptions: any[] = [], rerankOperations: any[] = [], localQueries: any[] = []
   const service = createGroundedAnswersService({
     withWorkloadReservation: async ({ work }) => work({ markAttempted() {}, markRefused() {}, usageTraceId: 'trace-test' }),
@@ -30,7 +30,7 @@ function fixture(options: { matches?: typeof source[]; text?: string; outage?: b
     getEmbeddings: async (texts, operation) => { embeddings.push(texts); embeddingOptions.push(operation); return [[1, 0]] },
     searchSimilarChunks: async (params) => {
       searches.push(params)
-      if (options.outage) throw new Error('simulated retrieval outage')
+      if (options.outage) throw new Error(typeof options.outage === 'string' ? options.outage : 'simulated retrieval outage')
       return options.matches ?? [source]
     },
     rerank: async ({ items, limit, operation }) => {
@@ -125,6 +125,20 @@ describe('grounded answers with offline dependencies', () => {
     assert.equal(f.localQueries[0].where.document.organizationId, 'org-b')
     assert.deepEqual(f.localQueries[0].where.document.activeVersionId, { not: null })
     assert.equal(f.localQueries[0].where.document.deletedAt, null)
+  })
+  it('logs only a safe category when retrieval fails', async () => {
+    const secret = 'provider response contains sensitive content'
+    const f = fixture({ outage: secret })
+    const originalError = console.error
+    const logged: unknown[][] = []
+    console.error = (...args: unknown[]) => { logged.push(args) }
+    try {
+      await f.service.answerQuestion({ question: 'refund policy?' }, { organizationId: 'org-a' })
+    } finally {
+      console.error = originalError
+    }
+    assert.equal(JSON.stringify(logged).includes(secret), false)
+    assert.deepEqual(logged[0]?.[1], { category: 'internal' })
   })
   for (const outage of [false, true]) {
     it(`refuses partially covered multi-part questions (fallback=${outage})`, async () => {

@@ -100,7 +100,7 @@ async function claimJob(): Promise<Claim | null> {
     const candidates = await tx.$queryRaw<Array<{ id: string }>>`
       SELECT "id" FROM "questionnaire_jobs"
       WHERE "status" = 'QUEUED' OR ("status" = 'RUNNING' AND "leaseExpiresAt" <= NOW())
-      ORDER BY "createdAt" FOR UPDATE SKIP LOCKED LIMIT 1`
+      ORDER BY "updatedAt", "createdAt" FOR UPDATE SKIP LOCKED LIMIT 1`
     const candidate = candidates[0]
     if (!candidate) return null
     const job = await tx.questionnaireJob.update({ where: { id: candidate.id }, data: {

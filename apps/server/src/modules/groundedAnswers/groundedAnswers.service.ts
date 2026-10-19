@@ -170,7 +170,9 @@ export function createGroundedAnswersService(overrides: Partial<typeof defaultDe
         if (error instanceof ProviderOperationError && (error.category === 'cancelled' || error.category === 'deadline')) {
           throw error
         }
-        console.error('Error in pgvector-grounded QA, falling back to local...', error)
+        console.error('Grounded answer retrieval failed; using local fallback', {
+          category: error instanceof ProviderOperationError ? error.category : 'internal',
+        })
       }
     }
 

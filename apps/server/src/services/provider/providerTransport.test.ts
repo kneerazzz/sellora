@@ -181,6 +181,26 @@ describe('provider transport policy', () => {
     assert.equal(dispatches, 1)
   })
 
+  it('does not dispatch when cancellation occurs during usage attempt persistence', async () => {
+    const controller = new AbortController()
+    const events: string[] = []
+    let dispatches = 0
+    await assert.rejects(requestProviderJson({
+      url: 'https://provider.invalid', request: {}, validate: validateValue,
+      options: {
+        policy,
+        signal: controller.signal,
+        attemptObserver: {
+          beforeAttempt: async () => { events.push('start'); controller.abort(new Error('caller stopped')) },
+          afterAttempt: async outcome => { events.push(`finish-${outcome.outcome}`) },
+        },
+        dependencies: { fetch: async () => { dispatches += 1; return Response.json({ value: 'unexpected' }) } },
+      },
+    }), (error: any) => error.category === 'cancelled' && error.attempts[0]?.outcome === 'cancelled')
+    assert.equal(dispatches, 0)
+    assert.deepEqual(events, ['start', 'finish-cancelled'])
+  })
+
   it('does not retry authentication or response validation failures', async () => {
     for (const response of [
       Response.json({ error: { message: 'bad key' } }, { status: 401 }),

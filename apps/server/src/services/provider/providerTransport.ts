@@ -243,6 +243,7 @@ export async function requestProviderJson<T>(params: {
     signal?.addEventListener('abort', cancelRequest, { once: true })
 
     try {
+      if (signal?.aborted) throw new ProviderAttemptError('Provider operation was cancelled', 'cancelled', false)
       const deadline = dependencies.sleep(remainingMs, deadlineSleepController.signal).then(() => {
         const error = new ProviderAttemptError('Provider operation deadline exceeded', 'deadline', false)
         requestController.abort(error)
